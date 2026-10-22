@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.venv-test/
+.multigpu/
+.taste-skill/
+*.egg-info/
+build/
+dist/
+node_modules/
+.test-runs/
+.env
+*.log

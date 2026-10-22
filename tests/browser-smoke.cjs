@@ -1,0 +1,77 @@
+/* Optional UI acceptance check: NODE_PATH must resolve Playwright. No cloud jobs. */
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+
+(async () => {
+  const base = process.env.MULTIGPU_TEST_URL || 'http://127.0.0.1:8765';
+  const out = path.resolve('.test-runs/browser');
+  await fs.mkdir(out, { recursive: true });
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto(base);
+    await page.getByRole('heading', { name: 'Where can I train within my allowance?' }).waitFor();
+    await page.locator('#navigation a[href="#providers"]').click();
+    await page.getByRole('heading', { name: 'Your compute providers' }).waitFor();
+    assert.equal(await page.locator('.provider-table tbody tr').count(), 14);
+    await page.getByLabel('Search providers', { exact: true }).fill('Kaggle');
+    assert.equal(await page.locator('.provider-table tbody tr').count(), 1);
+    await page.locator('.provider-title').click();
+    await page.getByRole('dialog').waitFor();
+    await page.keyboard.press('Escape');
+    await page.goto(base + '/#new');
+    await page.getByLabel('Run name', { exact: true }).fill('Browser acceptance classifier');
+    await page.getByLabel('Training steps', { exact: true }).fill('100');
+    await page.getByRole('button', { name: /Preview training plan/ }).click();
+    await page.getByRole('button', { name: 'Start training', exact: true }).click();
+    await page.waitForURL('**/#job/**');
+    await page.waitForFunction(() => document.querySelector('.job-title-row .pill')?.textContent.trim() === 'Completed', { timeout: 30000 });
+    await page.locator('.chart').waitFor();
+    const modelDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download model files', exact: true }).click();
+    await (await modelDownload).saveAs(path.join(out, 'model.zip'));
+    await page.screenshot({ path: path.join(out, 'completed-desktop.png'), fullPage: true });
+    const completedUrl = page.url();
+    await page.goto(base + '/#new');
+    await page.getByLabel('Run name', { exact: true }).fill('Browser pause and resume');
+    await page.getByLabel('Training steps', { exact: true }).fill('1000000');
+    await page.getByLabel('Batch size', { exact: true }).fill('256');
+    await page.getByRole('button', { name: /Preview training plan/ }).click();
+    await page.getByRole('button', { name: 'Start training', exact: true }).click();
+    await page.waitForURL('**/#job/**');
+    await page.getByRole('button', { name: 'Save & pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume training', exact: true }).waitFor({ timeout: 30000 });
+    await page.getByRole('button', { name: 'Resume training', exact: true }).click();
+    await page.getByRole('button', { name: 'Save & pause', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Save & pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume training', exact: true }).waitFor({ timeout: 30000 });
+    await page.goto(base + '/#new');
+    await page.getByLabel('Run name', { exact: true }).fill('Browser guided notebook');
+    await page.locator('input[name="providers"][value="local"]').uncheck();
+    await page.locator('input[name="providers"][value="colab"]').check();
+    await page.getByRole('button', { name: /Preview training plan/ }).click();
+    const notebookDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: /Prepare Google Colab notebook/ }).click();
+    await (await notebookDownload).saveAs(path.join(out, 'notebook.zip'));
+    await page.waitForURL('**/#job/**');
+    await page.getByRole('heading', { name: 'Bring your results back' }).waitFor();
+    await page.goto(completedUrl);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.chart').waitFor();
+    await page.locator('#toast').waitFor({ state: 'hidden', timeout: 10000 });
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Phone layout overflowed');
+    await page.screenshot({ path: path.join(out, 'completed-mobile.png'), fullPage: true });
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+    await page.locator('#navigation a[href="#providers"]').click();
+    await page.getByRole('heading', { name: 'Your compute providers' }).waitFor();
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Phone provider directory overflowed');
+    assert.deepEqual(errors, []);
+    console.log('UI acceptance passed: 14 providers, search/dialog, real training/export, pause/resume, guided notebook, phone layout.');
+  } finally {
+    await browser.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
