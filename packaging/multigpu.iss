@@ -1,5 +1,8 @@
+#if (Ver >> 8) != (EncodeVer(6, 7, 3) >> 8)
+  #error Inno Setup 6.7.3 is required for this pinned build.
+#endif
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.3.0"
 #endif
 #ifndef PayloadDir
   #error PayloadDir must point to an allowlisted prepared payload.
@@ -27,19 +30,21 @@ UninstallDisplayName=MultiGPU
 CloseApplications=no
 RestartApplications=no
 AppMutex=MultiGPU.Desktop
+SetupIconFile={#PayloadDir}\native\MultiGPU.ico
+UninstallDisplayIcon={app}\MultiGPU.exe
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\MultiGPU"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\start-desktop.ps1"""; WorkingDir: "{app}"
-Name: "{userdesktop}\MultiGPU"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\start-desktop.ps1"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\MultiGPU"; Filename: "{app}\MultiGPU.exe"; WorkingDir: "{app}"; AppUserModelID: "MultiGPU.Desktop"
+Name: "{userdesktop}\MultiGPU"; Filename: "{app}\MultiGPU.exe"; WorkingDir: "{app}"; AppUserModelID: "MultiGPU.Desktop"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\start-desktop.ps1"""; Description: "Open MultiGPU"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MultiGPU.exe"; Description: "Open MultiGPU"; Flags: nowait postinstall skipifsilent
 
 ; Workspaces, exports, native provider credentials and the managed environment
 ; live outside {app}. They are intentionally retained on upgrade and uninstall.

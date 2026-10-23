@@ -164,9 +164,10 @@ class ConnectorTests(unittest.TestCase):
         self.assertFalse((self.root / "escaped.txt").exists())
 
     def test_provider_wrappers_are_normalized_and_verified(self):
+        self.spec.write_text(json.dumps(dict(recipe="custom", steps=3)), encoding="utf-8")
         source = self.root / "download" / "output" / "output"
         source.mkdir(parents=True)
-        write_checkpoint(source, {"step": 3})
+        write_checkpoint(source, dict(step=3, total_steps=3, recipe="custom", payload={}))
         export_artifacts({"model.json": "{}"}, source / "export")
         (source / "events.jsonl").write_text('{"type":"completed","step":3}\n', encoding="utf-8")
         result = c._publish_outputs(self.root / "download", self.root)
@@ -422,7 +423,8 @@ class ConnectorTests(unittest.TestCase):
         weights.write_bytes(b"weights")
         digest = hashlib.sha256(weights.read_bytes()).hexdigest()
         write_checkpoint(output, dict(recipe="image", payload=dict(weights_asset="assets/base_weights.pth", weights_sha256=digest)))
-        c._publish_outputs(output, self.root)
+        with patch("multigpu.artifacts.validate_checkpoint_payload"), patch("multigpu.artifacts.checkpoint_assets", return_value={"assets/base_weights.pth": weights}):
+            c._publish_outputs(output, self.root)
         self.assertEqual((self.root / "assets" / "base_weights.pth").read_bytes(), b"weights")
 
     def test_kaggle_status_does_not_match_words_in_kernel_name(self):

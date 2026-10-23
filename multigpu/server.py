@@ -20,7 +20,7 @@ def make_server(service, port=8765):
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "MultiGPU/0.1"
+        server_version = "MultiGPU/0.3"
 
         def log_message(self, format, *args):
             pass
@@ -62,6 +62,8 @@ def make_server(service, port=8765):
                     return self.send(200, service.hardware)
                 if url.path == "/api/draft":
                     return self.send(200, {"draft": service.draft()})
+                if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "setup":
+                    return self.send(200, service.provider_setup(parts[2]))
                 if parts[:3] == ["api", "environment", "tasks"] and len(parts) == 4:
                     return self.send(200, environment.get(parts[3]))
                 if url.path == "/api/jobs":
@@ -72,6 +74,15 @@ def make_server(service, port=8765):
                         job = service.job(jid, True)
                         job["logs"] = service.logs(jid)
                         return self.send(200, job)
+                    if len(parts) == 4 and parts[3] == "setup":
+                        return self.send(200, service.job_setup(jid))
+                    if len(parts) == 4 and parts[3] in ("notebook", "notebook-payload"):
+                        notebook = parts[3] == "notebook"
+                        file = service.notebook(jid) if notebook else service.notebook_payload(jid)
+                        filename = "training.ipynb" if notebook else "training-payload.zip"
+                        content_type = "application/x-ipynb+json" if notebook else "application/zip"
+                        return self.send(200, Path(file).read_bytes(), content_type,
+                                         {"Content-Disposition": f'attachment; filename="{filename}"'})
                     if len(parts) == 4 and parts[3] in ("bundle", "artifacts"):
                         file = service.bundle(jid, parse_qs(url.query).get("provider", [None])[0]) if parts[3] == "bundle" else service.artifact_zip(jid)
                         return self.send(200, Path(file).read_bytes(), "application/zip", {"Content-Disposition": f'attachment; filename="multigpu-{parts[3]}-{jid[:8]}.zip"'})
@@ -119,6 +130,8 @@ def make_server(service, port=8765):
                     from .desktop import select_path
                     return self.send(200, select_path(raw.get("kind", "file"), raw.get("purpose", "dataset")))
                 if parts == ["api", "shutdown"]:
+                    if getattr(service, "environment_busy", False):
+                        raise ValueError("Environment setup is still running. Wait for it to finish before quitting.")
                     self.send(200, {"stopping": True})
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
@@ -128,7 +141,11 @@ def make_server(service, port=8765):
                     return self.send(201, service.create(raw, require_preview=True))
                 if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "probe":
                     return self.send(200, service.probe(parts[2], raw))
+                if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "setup":
+                    return self.send(200, service.provider_setup(parts[2], raw))
                 if len(parts) == 4 and parts[:2] == ["api", "jobs"]:
+                    if parts[3] == "setup":
+                        return self.send(200, service.job_setup(parts[2], raw))
                     if parts[3] == "import":
                         return self.send(200, service.import_output(parts[2], raw))
                     if parts[3] == "resume":

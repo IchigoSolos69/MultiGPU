@@ -1,5 +1,10 @@
 function Get-MultiGPUEnvironment {
     param([string]$AppRoot, [string]$EnvironmentRoot)
+    $env:PYTHONPATH=$AppRoot
+    $env:PYTHONHOME=''
+    $env:PYTHONNOUSERSITE='1'
+    $env:PYTHONDONTWRITEBYTECODE='1'
+    $env:PYTHONUNBUFFERED='1'
     $uv=Join-Path $AppRoot 'uv.exe'
     $managed=Join-Path $AppRoot 'runtime'
     $bundled=$null
@@ -26,12 +31,8 @@ function Get-MultiGPUEnvironment {
         }
         if ($LASTEXITCODE -or !(Test-Path -LiteralPath $python)) { throw 'The application environment could not be prepared.' }
     }
-    $check=(& $python -c 'import sys; print("managed" if sys.prefix != sys.base_prefix and sys.version_info >= (3,11) else "invalid")').Trim()
-    if ($LASTEXITCODE -or $check -ne 'managed') { throw 'The application requires its own virtual environment with Python 3.11 or newer.' }
-    $env:PYTHONPATH=$AppRoot
-    $env:PYTHONNOUSERSITE='1'
-    $env:PYTHONDONTWRITEBYTECODE='1'
-    $env:PYTHONUNBUFFERED='1'
+    $check=& $python -c 'import sys; assert sys.prefix != sys.base_prefix and sys.version_info >= (3,11); print(1)'
+    if ($LASTEXITCODE -or [string]$check -ne '1') { throw 'The application requires its own virtual environment with Python 3.11 or newer.' }
     if (Test-Path -LiteralPath $uv) { $env:MULTIGPU_UV=$uv }
     return @{ Python=$python; Environment=$EnvironmentRoot; Uv=$uv }
 }

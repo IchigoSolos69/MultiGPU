@@ -52,19 +52,28 @@ class Service:
         self.jobs_root = self.root / "jobs"
         self.jobs_root.mkdir(exist_ok=True)
         self.lock = threading.RLock()
+        self.environment_busy = False
         self.processes = {}
         self.threads = {}
         self.closing = threading.Event()
         self.hardware = hardware_info()
         self._migrate()
         for job in self.store.all("job"):
-            if job["status"] in ("queued", "running", "pausing", "exporting"):
+            if job["status"] in ("queued", "running", "pausing", "exporting") or (job["status"] == "interrupted" and (job.get("handle") or job.get("submission_intent"))):
                 job.update(status="interrupted", connection_status="unknown", message="Reconnecting to the previous execution before another attempt can start.")
                 self.save_job(job)
                 if job["provider_id"] != "local" and (job.get("handle") or job.get("submission_intent")):
                     thread = threading.Thread(target=self.reconcile, args=(job["id"],), daemon=True)
                     self.threads[job["id"]] = thread
                     thread.start()
+                elif job["provider_id"] == "local":
+                    from .worker import worker_active
+                    if worker_active(self.jobs_root / job["id"]):
+                        job.update(status="running", connection_status="connected", message="Reconnected to the existing local worker.")
+                        self.save_job(job)
+                        thread = threading.Thread(target=self._monitor_local_orphan, args=(job["id"],), daemon=True)
+                        self.threads[job["id"]] = thread
+                        thread.start()
 
     def _migrate(self):
         if self.store.get("schema", "version", {}).get("version", 1) >= 2:
@@ -109,6 +118,68 @@ class Service:
     def connections(self):
         return {x["provider_id"]: x for x in self.store.all("connection")}
 
+    def provider_setup(self, pid, raw=None):
+        from .onboarding import provider_setup
+        with self.lock:
+            if pid not in {p["id"] for p in CATALOG}:
+                raise ValueError("Unknown provider.")
+            guide = provider_setup(pid, self.connections().get(pid), self.hardware)
+            return self._setup_progress("provider_setup", pid, guide, raw)
+
+    def job_setup(self, jid, raw=None):
+        from .onboarding import job_setup
+        with self.lock:
+            guide = job_setup(self.job(jid), self.jobs_root / jid)
+            return self._setup_progress("job_setup", jid, guide, raw)
+
+    def _setup_progress(self, kind, key, guide, raw):
+        steps = guide["steps"]
+        ids = [s["id"] for s in steps]
+        saved = self.store.get(kind, key, {})
+        if guide.get("revision") is not None and saved.get("revision") != guide["revision"]:
+            saved = {}
+        acknowledgements = set(saved.get("acknowledged_steps", [])) & set(ids)
+        for step in steps:
+            # Reading a guide never proves authentication, entitlement or quota.
+            automatic = step["completion"] == "automatic"
+            step["completed"] = bool(step.get("ready")) if automatic else step["id"] in acknowledgements
+            step["can_complete"] = bool(step.get("can_complete", True)) and (not automatic or bool(step.get("ready")))
+        current = saved.get("current_step")
+        if current not in ids:
+            current = next((s["id"] for s in steps if not s["completed"]), ids[-1])
+        if raw is not None:
+            if not isinstance(raw, dict) or set(raw) - {"action", "step_id", "acknowledged", "guide_revision"}:
+                raise ValueError("Send a setup action, step_id and optional acknowledgement only.")
+            if guide.get("revision") is not None and raw.get("guide_revision") != guide["revision"]:
+                raise ValueError("The training files changed. Refresh this setup guide before continuing.")
+            action, selected = raw.get("action"), raw.get("step_id")
+            if action not in ("advance", "back", "goto") or selected not in ids:
+                raise ValueError("Choose a valid setup step and action.")
+            if action == "goto":
+                current = selected
+            else:
+                if selected != current:
+                    raise ValueError("The setup step changed. Refresh the guide before continuing.")
+                index = ids.index(current)
+                if action == "advance":
+                    step = steps[index]
+                    if not step["can_complete"]:
+                        raise ValueError(step.get("blocking_reason") or "Finish this setup step before continuing.")
+                    if step["completion"] == "acknowledgement":
+                        if raw.get("acknowledged") is not True:
+                            raise ValueError("Confirm you finished this step before continuing.")
+                        acknowledgements.add(current)
+                        step["completed"] = True
+                    current = ids[min(index + 1, len(ids) - 1)]
+                else:
+                    current = ids[max(index - 1, 0)]
+            self.store.put(kind, key, {"schema_version": 1, "current_step": current,
+                                      "acknowledged_steps": sorted(acknowledgements),
+                                      "revision": guide.get("revision"), "updated_at": now()})
+        guide["progress"] = {"current_step": current, "completed_steps": [s["id"] for s in steps if s["completed"]]}
+        guide["completed"] = all(s["completed"] for s in steps)
+        return guide
+
     def bootstrap(self):
         connections = self.connections()
         providers = []
@@ -116,7 +187,7 @@ class Service:
             connection = connections.get(p["id"], {"ready": p["id"] == "local", "detail": "Available on this computer." if p["id"] == "local" else "Not connected", "config": {}})
             providers.append({**p, "connection": connection})
         return {"providers": providers, "jobs": self.jobs(), "hardware": self.hardware, "settings": self.settings(),
-                "app": {"name": "MultiGPU", "version": "0.2.0", "workspace_dir":str(self.root)}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
+                "app": {"name": "MultiGPU", "version": "0.3.0", "workspace_dir":str(self.root)}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
 
     def probe(self, pid, config):
         if pid not in {p["id"] for p in CATALOG}:
@@ -155,8 +226,13 @@ class Service:
             if job["provider_id"] == "modal":
                 actions.append("cancel")
         if status in TERMINAL:
-            actions.extend(["import", "bundle"] if job.get("execution_mode") == "guided" else [])
-            if (self.jobs_root / job["id"] / "checkpoint.json").exists() and job.get("submission_status") != "unknown" and (not job.get("handle") or job.get("remote_terminal")):
+            if job.get("execution_mode") == "guided":
+                actions.append("import")
+                if job.get("step", 0) < job["spec"]["steps"]:
+                    actions.append("bundle")
+            checkpoint_step = (job.get("checkpoint") or {}).get("step", job.get("step", 0))
+            resumable = (self.jobs_root / job["id"] / "checkpoint.json").exists() or self._pristine_pause(job)
+            if status in ("paused", "interrupted", "error") and checkpoint_step < job.get("total_steps", job["spec"]["steps"]) and resumable and job.get("submission_status") != "unknown" and (not job.get("handle") or job.get("remote_terminal")):
                 actions.append("resume")
             if (self.jobs_root / job["id"] / "checkpoint.previous.json").exists():
                 actions.append("recover")
@@ -182,20 +258,41 @@ class Service:
             report["errors"].append("Prepare the image environment and verified pretrained weights before launching or preparing a notebook.")
         try:
             destination = Path(spec["output_dir"])
+            if destination.exists() and not destination.is_dir():
+                report["errors"].append("The export path is a file. Choose a folder.")
             existing = destination
             while not existing.exists():
+                existing = existing.parent
+            if existing.is_file():
                 existing = existing.parent
             if not os.access(existing, os.W_OK):
                 report["errors"].append("The export folder is not writable. Choose another folder.")
             if destination.resolve().is_relative_to(self.jobs_root.resolve()):
                 report["errors"].append("Choose an export folder outside the application's internal jobs directory.")
-            if shutil.disk_usage(existing).free < 10 * 1024 * 1024:
-                report["errors"].append("The export drive has less than 10 MB free. Choose another folder.")
+            required = 10 * 1024 * 1024
+            weights = report.get("dataset", {}).get("weights", {})
+            if spec["recipe"] == "image" and weights.get("ready"):
+                required += 3 * Path(weights["path"]).stat().st_size
+            available = shutil.disk_usage(existing).free
+            report["storage"] = {"required_free_bytes": required, "available_free_bytes": available}
+            if available < required:
+                report["errors"].append("The export drive has insufficient space for a verified export and its recovery copy. Choose another folder.")
         except OSError as exc:
             report["errors"].append("Cannot access the export folder: " + str(exc))
         if spec["recipe"] == "image" and report.get("dataset", {}).get("total_steps"):
             spec["steps"] = report["dataset"]["total_steps"]
         result = preview(spec, CATALOG, self.connections(), self.hardware, self.jobs())
+        if result["selected_provider"] == "local" and spec["device"] == "cuda" and self.hardware.get("gpus"):
+            index = spec.get("gpu_index", 0)
+            gpus = self.hardware["gpus"]
+            capacity = gpus[index].get("memory_mb", 0) * 1024 * 1024 if index < len(gpus) else 0
+            batch = report.get("dataset", {}).get("estimated_batch_bytes", 0)
+            if index >= len(gpus):
+                report["errors"].append("The selected local GPU index is unavailable. Choose an attached GPU.")
+            elif capacity and batch > capacity:
+                report["errors"].append("The input batch alone exceeds the selected local GPU's total memory. Reduce batch size.")
+            else:
+                report["warnings"].append("Batch memory is an estimate; model, optimizer and runtime memory can still exceed GPU capacity.")
         if report["errors"]:
             result["eligible"] = False
             result["selected_provider"] = None
@@ -211,6 +308,8 @@ class Service:
 
     def create(self, raw, require_preview=False):
         with self.lock:
+            if self.environment_busy:
+                raise ValueError("Wait for environment preparation to finish before starting training.")
             plan = self.plan(raw)
             digest = raw.get("preview_digest")
             if (require_preview or digest is not None) and (not isinstance(digest, str) or not hmac.compare_digest(digest, plan["preview_digest"])):
@@ -234,7 +333,7 @@ class Service:
             job = {"id": jid, "name": spec["name"], "status": "awaiting_user" if guided else "queued", "provider_id": pid,
                    "created_at": now(), "updated_at": now(), "spec": spec, "step": 0, "total_steps": spec["steps"],
                    "loss": None, "device": None, "checkpoint": None, "export_path": None,
-                   "message": "Download the notebook bundle and run it in your provider account." if guided else "Preparing training environment.",
+                   "message": "Follow the in-app setup guide to run training in your provider account." if guided else "Preparing training environment.",
                    "plan": plan, "attempted_providers": [pid], "schema_version": 2,
                    "execution_mode": "guided" if guided else "automatic", "phase": "preparing", "connection_status": "connected",
                    "submission_status": "prepared", "cleanup_status": "pending", "export_status": "pending",
@@ -282,6 +381,8 @@ class Service:
             job["last_worker_event_at"] = event.get("timestamp", job.get("last_worker_event_at"))
             if event.get("type") == "metric":
                 job["last_progress_at"] = event.get("timestamp")
+            if event.get("type") == "summary" and event.get("attempt_id") == job["spec"].get("attempt_id"):
+                job["last_summary"] = event
             if event.get("type") == "evaluation":
                 job["evaluation"] = event.get("metrics", event.get("evaluation", {}))
             if event.get("evaluation"):
@@ -311,9 +412,17 @@ class Service:
         path = self.jobs_root / jid
         job = self.job(jid)
         try:
+            if (path / "STOP").exists():
+                job.update(status="paused", phase="paused", message="Paused before a new execution was submitted.")
+                self.save_job(job)
+                return
             if job["provider_id"] == "local":
                 while not self.closing.is_set():
                     with self.lock:
+                        if (path / "STOP").exists():
+                            job.update(status="paused", phase="paused", message="Paused while waiting for this computer.")
+                            self.save_job(job)
+                            return
                         busy = any(other["id"] != jid and other.get("provider_id") == "local" and other["status"] in ("running", "pausing") for other in self.jobs())
                         if not busy:
                             job.update(status="running", phase="preparing")
@@ -325,6 +434,15 @@ class Service:
                 if self.closing.is_set():
                     return
             job["spec"]["attempt_id"] = uuid.uuid4().hex
+            from .datasets import fingerprint_for_spec
+            if job["spec"].get("fingerprint") and fingerprint_for_spec(job["spec"]) != job["spec"]["fingerprint"]:
+                raise ValueError("Inputs changed after preflight; preview this training plan again")
+            observation = dict(self.connections().get(job["provider_id"], {}).get("quota") or {})
+            observation.update(confidence=observation.get("confidence", "unknown"), snapshot=True,
+                               source=observation.get("source", "local" if job["provider_id"] == "local" else "provider_connection"))
+            observation.setdefault("observed_at", self.connections().get(job["provider_id"], {}).get("checked_at"))
+            job["allowance_observation"] = observation
+            job["spec"]["allowance_observation"] = observation
             self._write_json(path / "spec.json", job["spec"])
             job.update(status="running", phase="preparing", message="Preparing the training environment.")
             self.save_job(job)
@@ -361,6 +479,10 @@ class Service:
             else:
                 config = self.connections().get(job["provider_id"], {}).get("config", {})
                 intent = connectors.prepare(job["provider_id"], config, path / "spec.json", path)
+                if (path / "STOP").exists():
+                    job.update(status="paused", phase="paused", submission_status="prepared", message="Paused before provider submission.")
+                    self.save_job(job)
+                    return
                 job.update(submission_intent=intent, submission_status="submitting", phase="submitting", connection_status="connected")
                 self.save_job(job)
                 try:
@@ -377,33 +499,92 @@ class Service:
             job.update(status="error", message=str(exc))
             self.save_job(job)
 
+    @staticmethod
+    def _pristine_pause(job):
+        return job.get("step", 0) == 0 and job.get("submission_status", "prepared") == "prepared" and not job.get("handle")
+
+    def _assert_stopped(self, job):
+        from .worker import worker_active
+        jid = job["id"]
+        thread = self.threads.get(jid)
+        if jid in self.processes or (thread and thread.is_alive()) or worker_active(self.jobs_root / jid):
+            raise ValueError("Wait for the previous worker to stop before changing recovery data or starting another attempt.")
+        if job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal")):
+            raise ValueError("Reconcile the previous remote execution before starting another attempt or replacing recovery data.")
+
+    def _monitor_local_orphan(self, jid):
+        from .worker import worker_active
+        path = self.jobs_root / jid
+        while worker_active(path):
+            if self.closing.wait(.5):
+                return
+            job = self._ingest(self.job(jid))
+            self.save_job(job)
+        job = self._ingest(self.job(jid))
+        job.update(status=job.get("worker_status", "interrupted"), connection_status="connected")
+        if job["status"] == "interrupted":
+            job["message"] = "The previous worker stopped without a final acknowledgment. Verify its checkpoint before resuming."
+        self.save_job(job)
+        if job["status"] == "completed":
+            self._auto_export(jid)
+
     def _finish_remote(self, jid, terminal_state):
+        from .artifacts import IntegrityError, verify_export
         job = self.job(jid)
         config = self.connections().get(job["provider_id"], {}).get("config", {})
         path = self.jobs_root / jid
         job.update(phase="collecting", remote_terminal=True, connection_status="connected")
         self.save_job(job)
+        collection_error = None
         try:
             connectors.collect(job["provider_id"], config, job["handle"], path)
-            handle = job["handle"]
-            job = self._ingest(self.job(jid))
-            job["handle"] = handle
+        except Exception as exc:
+            collection_error = str(exc)
+        handle = job["handle"]  # collect may acknowledge cleanup even when it raises afterwards.
+        job = self._ingest(self.job(jid))
+        job["handle"] = handle
+        cleanup = handle.get("cleanup_status", "verified" if handle.get("studio_stopped") else "retained")
+        job["cleanup_status"] = cleanup
+        try:
+            if collection_error and cleanup not in ("failed", "pending"):
+                raise IntegrityError(collection_error)
+            checkpoint, exported = path / "checkpoint.json", path / "export"
+            if checkpoint.exists():
+                self._validate_checkpoint(job, checkpoint)
+            if (exported / "manifest.json").exists():
+                metadata = verify_export(exported).get("metadata", {})
+                if metadata.get("job_id") != jid or metadata.get("recipe") != job["spec"]["recipe"] or metadata.get("fingerprint", job.get("fingerprint")) != job.get("fingerprint"):
+                    raise IntegrityError("Collected model identity does not match this run")
+                if metadata.get("step") != job["spec"]["steps"]:
+                    raise IntegrityError("Collected model export has not reached the requested target")
+            elif job.get("worker_status") == "completed":
+                raise IntegrityError("Completed execution is missing its verified model export")
+            elif not checkpoint.exists():
+                raise IntegrityError(collection_error or "Provider returned no verified model or checkpoint")
             job["collection_status"] = "verified"
             job.pop("collection_error", None)
         except Exception as exc:
-            job = self.job(jid)
             job.update(collection_status="failed", collection_error=str(exc), status="interrupted", message="The remote execution ended, but results need recovery: " + str(exc))
+            if collection_error and cleanup in ("failed", "pending"):
+                job["cleanup_error"] = collection_error
             self.save_job(job)
             return job
         successful = terminal_state in ("completed", "complete", "succeeded", "success")
         job["status"] = job.get("worker_status", "completed" if successful else "paused" if (path / "checkpoint.json").exists() else "error")
         job["message"] = "Remote results were collected and verified." if successful else "Provider execution ended. Recoverable progress has been collected."
-        job["cleanup_status"] = "verified" if job.get("handle", {}).get("studio_stopped") else "retained"
+        if collection_error:
+            job["cleanup_error"] = collection_error
+        elif cleanup == "verified":
+            job.pop("cleanup_error", None)
         self.save_job(job)
         if job["status"] == "completed":
             self._auto_export(jid)
-        elif job["status"] == "paused":
+        elif job["status"] == "paused" and cleanup not in ("failed", "pending"):
             self._continue_to_next(job)
+        if cleanup in ("failed", "pending"):
+            job = self.job(jid)
+            job["message"] = "Training results were verified locally. Provider cleanup still needs attention: " + (collection_error or cleanup)
+            self.save_job(job)
         return self.job(jid)
 
     def _monitor_remote(self, jid):
@@ -494,11 +675,10 @@ class Service:
         plan = self.plan(candidate)
         if not plan["eligible"]:
             return
-        from .artifacts import load_checkpoint
-        load_checkpoint(path / "checkpoint.json")
+        self._validate_checkpoint(job, path / "checkpoint.json")
         job["spec"]["resume_from"] = str(path / "checkpoint.json")
         job["spec"]["providers"] = original
-        job.setdefault("attempts", []).append({"provider_id":job["provider_id"], "attempt_id":job["spec"].get("attempt_id"), "handle":job.get("handle"), "status":job["status"], "checkpoint":job.get("checkpoint")})
+        job.setdefault("attempts", []).append({"provider_id":job["provider_id"], "attempt_id":job["spec"].get("attempt_id"), "handle":job.get("handle"), "status":job["status"], "checkpoint":job.get("checkpoint"), "cleanup_status":job.get("cleanup_status"), "collection_status":job.get("collection_status")})
         for key in ("handle", "submission_intent", "remote_terminal", "stop_requested"):
             job.pop(key, None)
         job.update(submission_status="prepared", connection_status="connected")
@@ -523,21 +703,19 @@ class Service:
 
     def resume(self, jid, providers=None):
         with self.lock:
+            if self.environment_busy:
+                raise ValueError("Wait for environment preparation to finish before resuming training.")
             job = self.job(jid)
             if job["status"] not in ("paused", "interrupted", "error"):
                 raise ValueError("This run is not paused or interrupted.")
-            if jid in self.processes or (self.threads.get(jid) and self.threads[jid].is_alive()):
-                raise ValueError("Wait for the previous worker to stop before resuming.")
-            if job["provider_id"] == "local":
-                from .worker import worker_active
-                if worker_active(self.jobs_root / jid):
-                    raise ValueError("A previous worker still holds this run. Reconnect before starting another attempt.")
-            elif job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal")):
-                raise ValueError("Reconcile the previous remote execution before starting another attempt.")
+            self._assert_stopped(job)
             checkpoint = self.jobs_root / jid / "checkpoint.json"
-            if not checkpoint.exists():
+            if not checkpoint.exists() and not self._pristine_pause(job):
                 raise ValueError("No local checkpoint is available. Retrieve the provider's checkpoint before resuming.")
-            self._validate_checkpoint(job, checkpoint)
+            if checkpoint.exists():
+                state = self._validate_checkpoint(job, checkpoint)
+                if state["step"] >= state["total_steps"]:
+                    raise ValueError("This checkpoint already reached the training target. Verify and export its results.")
             candidate_spec = {**job["spec"]}
             if providers is not None:
                 candidate_spec["providers"] = providers
@@ -549,7 +727,11 @@ class Service:
                 raise ValueError("No selected resource is currently eligible. Check provider connections and allowances.")
             stop = self.jobs_root / jid / "STOP"
             stop.unlink(missing_ok=True)
-            job["spec"] = {**job["spec"], "providers": plan["spec"]["providers"], "resume_from": str(checkpoint)}
+            job["spec"] = {**job["spec"], "providers": plan["spec"]["providers"]}
+            if checkpoint.exists():
+                job["spec"]["resume_from"] = str(checkpoint)
+            else:
+                job["spec"].pop("resume_from", None)
             job.update(status="queued", provider_id=plan["selected_provider"], message="Resuming from the last committed checkpoint.")
             for key in ("handle", "submission_intent", "remote_terminal", "stop_requested"):
                 job.pop(key, None)
@@ -562,7 +744,7 @@ class Service:
             return job
 
     def export(self, jid, output_dir=None):
-        from .artifacts import export_verified
+        from .artifacts import export_verified, verify_export
         with self.lock:
             job = self.job(jid)
             path = self.jobs_root / jid
@@ -574,17 +756,25 @@ class Service:
             job["export_path"] = str(result)
             job["spec"]["output_dir"] = selected
             job["export_status"] = "verified"
+            job["artifacts"] = verify_export(result)["files"]
+            job["export_verified_at"] = now()
+            job["phase"] = "completed"
             job.pop("export_error", None)
             job["message"] = "Model files verified and saved locally. Remote cleanup remains under your control."
             return self.save_job(job)
 
     def _validate_checkpoint(self, job, checkpoint):
-        from .artifacts import load_checkpoint, IntegrityError
-        from .datasets import fingerprint_for_spec
+        from .artifacts import checkpoint_assets, load_checkpoint, IntegrityError, validate_checkpoint_payload
+        from .datasets import load_dataset
         state = load_checkpoint(checkpoint)
-        expected = job.get("fingerprint") or fingerprint_for_spec(job["spec"])
+        data = load_dataset(job["spec"])
+        expected = job.get("fingerprint") or data["fingerprint"]
         if state.get("job_id") != job["id"] or state.get("recipe") != job["spec"]["recipe"] or state.get("total_steps") != job["spec"]["steps"] or state.get("fingerprint") != expected:
             raise IntegrityError("Checkpoint identity or training inputs do not match this run.")
+        if data["fingerprint"] != expected:
+            raise IntegrityError("Training inputs changed since this run was planned.")
+        validate_checkpoint_payload(state, job["spec"], data)
+        checkpoint_assets(state, Path(checkpoint).parent)
         return state
 
     def recover(self, jid, raw):
@@ -593,6 +783,7 @@ class Service:
             job = self.job(jid)
             if job["status"] not in TERMINAL or job.get("submission_status") == "unknown":
                 raise ValueError("Resolve and stop the previous execution before restoring a checkpoint.")
+            self._assert_stopped(job)
             if raw.get("checkpoint", "previous") != "previous":
                 raise ValueError("Only the previous verified checkpoint can be restored.")
             path = self.jobs_root / jid
@@ -619,24 +810,26 @@ class Service:
     def clean_cache(self):
         if any(j["status"] in ("queued", "running", "pausing") for j in self.jobs()):
             raise ValueError("Pause training before cleaning downloaded caches.")
-        # Keep models and checkpoints; only application-owned disposable ZIP downloads are removed.
+        # Keep models and checkpoints; remove only application-owned download copies.
         removed = 0
         for folder in self.jobs_root.iterdir():
             if not folder.is_dir() or folder.is_symlink():
                 continue
-            for name in ("model.zip", "notebook.zip"):
+            for name in ("model.zip", "notebook.zip", "notebook-bundle.zip", "training.ipynb", "training-payload.zip"):
                 target = folder / name
                 if target.is_file() and not target.is_symlink() and target.resolve().is_relative_to(self.jobs_root.resolve()):
                     removed += target.stat().st_size
                     target.unlink()
-        return {"removed_bytes": removed, "message":"Disposable download archives removed. Models and recovery state were retained."}
+        return {"removed_bytes": removed, "message":"Disposable download files removed. Models and recovery state were retained."}
 
     def archive(self, jid, archived=True):
-        job = self.job(jid)
-        if job["status"] not in TERMINAL or job.get("submission_status") == "unknown":
-            raise ValueError("Stop and resolve this execution before archiving it.")
-        job["archived"] = bool(archived)
-        return self.save_job(job)
+        with self.lock:
+            job = self.job(jid)
+            if job["status"] not in TERMINAL or job.get("submission_status") == "unknown":
+                raise ValueError("Stop and resolve this execution before archiving it.")
+            self._assert_stopped(job)
+            job["archived"] = bool(archived)
+            return self.save_job(job)
 
     def predict(self, jid, raw):
         from .prediction import predict
@@ -651,6 +844,7 @@ class Service:
             job = self.job(jid)
             if job["status"] not in TERMINAL:
                 raise ValueError("Stop this run before importing external results.")
+            self._assert_stopped(job)
             source = raw.get("path")
             if not isinstance(source, str) or not source.strip():
                 raise ValueError("Enter the local path of your downloaded results folder or ZIP.")
@@ -660,6 +854,15 @@ class Service:
             if raw.get("preview"):
                 return result
             job.update(result, message="Notebook results verified and imported locally.")
+            job.update(last_import_at=now(), last_import_verified=True)
+            if result.get("checkpoint"):
+                job["spec"]["resume_from"] = result["checkpoint"]["path"]
+                if job["spec"]["recipe"] == "image":
+                    from .artifacts import load_checkpoint
+                    state = load_checkpoint(Path(result["checkpoint"]["path"]))
+                    job["spec"].update(weights_path=str(self.jobs_root / jid / "assets" / "base_weights.pth"),
+                                       weights_sha256=state["payload"]["weights_sha256"])
+                self._write_json(self.jobs_root / jid / "spec.json", job["spec"])
             job["remote_terminal"] = True
             self.save_job(job)
             if result["status"] == "completed":
@@ -667,14 +870,43 @@ class Service:
             return self.job(jid)
 
     def bundle(self, jid, provider=None):
-        job = self.job(jid)
-        pid = provider or job["provider_id"]
-        if pid == "codespaces":
-            raise ValueError("Codespaces is a repository development helper, not a training backend.")
-        if pid not in job["spec"]["providers"]:
-            raise ValueError("Choose a provider selected for this run.")
-        config = self.connections().get(pid, {}).get("config", {})
-        return connectors.build_bundle(pid, config, self.jobs_root / jid / "spec.json", self.jobs_root / jid)
+        return self._training_asset(jid, provider, "bundle")
+
+    def notebook(self, jid):
+        return self._training_asset(jid, None, "notebook")
+
+    def notebook_payload(self, jid):
+        return self._training_asset(jid, None, "payload")
+
+    def _training_asset(self, jid, provider, kind):
+        with self.lock:
+            job = self.job(jid)
+            self._assert_stopped(job)
+            pid = provider or job["provider_id"]
+            if pid == "codespaces":
+                raise ValueError("Codespaces is a repository development helper, not a training backend.")
+            if pid not in job["spec"]["providers"]:
+                raise ValueError("Choose a provider selected for this run.")
+            path = self.jobs_root / jid
+            checkpoint = path / "checkpoint.json"
+            if checkpoint.exists():
+                state = self._validate_checkpoint(job, checkpoint)
+                if state["step"] >= state["total_steps"]:
+                    raise ValueError("This checkpoint already reached the target. Export the finished model.")
+                job["spec"]["resume_from"] = str(checkpoint)
+                if state["recipe"] == "image":
+                    job["spec"].update(weights_path=str(path / "assets" / "base_weights.pth"), weights_sha256=state["payload"]["weights_sha256"])
+                self._write_json(path / "spec.json", job["spec"])
+                self.save_job(job)
+            config = self.connections().get(pid, {}).get("config", {})
+            build = {"bundle": connectors.build_bundle, "notebook": connectors.build_notebook,
+                     "payload": connectors.build_notebook_payload}[kind]
+            result = build(pid, config, path / "spec.json", path)
+            if kind == "notebook":
+                job["notebook_preparation"] = {"prepared_at": now(),
+                    "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest() if checkpoint.exists() else None}
+                self.save_job(job)
+            return result
 
     def artifact_zip(self, jid):
         job = self.job(jid)

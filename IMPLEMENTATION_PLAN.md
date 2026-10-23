@@ -63,3 +63,37 @@ training, LLM fine-tuning, other packaged operating systems and automatic remote
 artifact deletion are outside this release. Live account billing, actual CUDA
 compatibility and installer behavior require separate qualification; simulated
 results must never be presented as live certification.
+
+## Implementation status — 23 October 2026
+
+The six milestones are implemented in the local application. Verification is
+recorded separately from capability availability:
+
+| Area | Current evidence |
+|---|---|
+| Four-step setup, drafts, resource order, focus, async guards | Real browser acceptance and deterministic response-order tests |
+| Tabular and image classification | Real CPU training, exact resume, validation, reloaded and standalone inference |
+| Provider execution/reconciliation/stopping | Mocked native-interface regressions; live account qualification remains required |
+| Imports, rollback, checkpoint recovery, export retry | Local worker/artifact regressions, including continued guided sessions |
+| Windows distribution | Compiled installer, relocated bundled-runtime acceptance, isolated install/uninstall preservation |
+| CUDA, clean Windows VM, signed distribution | Not qualified by the current test environment |
+
+The release does not enable unverified credit-backed zero-spend automation or
+cross-provider synchronous training. Installer acceptance uses isolated folders
+on the current Windows host; it does not replace a separate clean-machine VM
+or real-provider billing qualification.
+
+## Version 0.3: Windows window and in-app setup
+
+- Open the workspace in a dedicated WebView2 Windows window, retaining the tray,
+  guarded shutdown, workspace preservation and provider-native authentication.
+- Keep provider account pages in the user's normal browser; restrict the app
+  window to its own controller origin.
+- Replace instruction-archive downloads with contextual provider and training
+  setup guides. Save navigation/acknowledgements and derive verified readiness
+  from current observations.
+- Provide actual notebook/training payload downloads only when required by the
+  provider. Explain upload, runtime selection, execution and result verification
+  inside the app. Preserve validated checkpoint continuation.
+- Verify persisted guides, stale responses, false readiness prevention, notebook
+  delivery, dedicated-window startup, downloads and installer behavior.

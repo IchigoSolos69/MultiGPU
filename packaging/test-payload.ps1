@@ -20,7 +20,7 @@ $env:PATH=Join-Path $env:SystemRoot 'System32'
 $env:MULTIGPU_PYTHON=''
 . (Join-Path $app 'packaging/launcher-common.ps1')
 $runtime=Get-MultiGPUEnvironment -AppRoot $app -EnvironmentRoot (Join-Path $TestRoot 'environment')
-$identity=(& $runtime.Python -c 'import json,sys; print(json.dumps(dict(executable=sys.executable,base_prefix=sys.base_prefix,prefix=sys.prefix,version=".".join(map(str,sys.version_info[:3])))))') | ConvertFrom-Json
+$identity=(& $runtime.Python -c "import json,sys; print(json.dumps(dict(executable=sys.executable,base_prefix=sys.base_prefix,prefix=sys.prefix,version='.'.join(map(str,sys.version_info[:3])))))") | ConvertFrom-Json
 if ($identity.version -ne '3.12.15' -or $identity.prefix -eq $identity.base_prefix -or !$identity.base_prefix.StartsWith($app,[StringComparison]::OrdinalIgnoreCase)) { throw 'The test did not use the relocated bundled Python and isolated environment.' }
 $workspace=Join-Path $TestRoot 'workspace'
 $connectionFile=Join-Path $workspace 'controller-connection.json'
@@ -60,9 +60,9 @@ try {
     do {
         Start-Sleep -Milliseconds 100
         $job=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/'+$job.id) -TimeoutSec 5
-    } until ($job.status -in @('completed','error') -or [DateTime]::UtcNow -gt $deadline)
-    if ($job.status -ne 'completed' -or !$job.export_path -or !(Test-Path -LiteralPath (Join-Path $job.export_path 'manifest.json'))) { throw ('Bundled training/export failed: '+($job | ConvertTo-Json -Depth 4)) }
-    $verified=& $runtime.Python -c 'import sys; from pathlib import Path; from multigpu.artifacts import verify_export; print(len(verify_export(Path(sys.argv[1]))["files"]))' $job.export_path
+    } until (($job.status -eq 'completed' -and $job.export_path) -or $job.status -eq 'error' -or $job.export_error -or [DateTime]::UtcNow -gt $deadline)
+    if ($job.status -ne 'completed' -or !$job.export_path -or !(Test-Path -LiteralPath (Join-Path $job.export_path 'manifest.json'))) { throw ('Bundled training/export failed: '+(@{id=$job.id;status=$job.status;phase=$job.phase;message=$job.message;export_error=$job.export_error} | ConvertTo-Json)) }
+    $verified=& $runtime.Python -c "import sys; from pathlib import Path; from multigpu.artifacts import verify_export; print(len(verify_export(Path(sys.argv[1]))['files']))" $job.export_path
     if ($LASTEXITCODE -or [int]$verified -lt 1) { throw 'The bundled model export did not pass integrity verification.' }
     Stop-TestController
     Start-TestController

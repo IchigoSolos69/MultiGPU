@@ -9,7 +9,8 @@ import stat
 import uuid
 import zipfile
 
-from .artifacts import IntegrityError, atomic_bytes, directory, export_artifacts, load_checkpoint, verify_export
+from .artifacts import (IntegrityError, _check_path, atomic_bytes, checkpoint_assets, directory,
+                        export_artifacts, load_checkpoint, validate_checkpoint_payload, verify_export)
 
 
 def _safe_parts(name):
@@ -42,8 +43,7 @@ def _unpack(source, staging):
 
 def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=False, expected_digest=None):
     source, job_dir = Path(source).absolute(), Path(job_dir).absolute()
-    if source.is_symlink() or (hasattr(source, "is_junction") and source.is_junction()):
-        raise IntegrityError("Select a regular folder or ZIP file.")
+    _check_path(source)
     staging = directory(job_dir / ("import-" + uuid.uuid4().hex))
     try:
         if source.is_file() and source.suffix.lower() == ".zip":
@@ -53,6 +53,8 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
             base = source
         else:
             raise ValueError("Select a downloaded results folder or ZIP archive.")
+        for item in base.rglob("*"):
+            _check_path(item)
         manifests = []
         for candidate in base.rglob("manifest.json"):
             if candidate.is_symlink():
@@ -80,15 +82,25 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
             raise IntegrityError("The checkpoint does not match this run's recipe and target.")
         if state and not 0 <= state.get("step", -1) <= spec["steps"]:
             raise IntegrityError("The checkpoint reports an invalid training step.")
-        from .datasets import fingerprint_for_spec
-        expected_fingerprint = job.get("fingerprint") or fingerprint_for_spec(spec)
+        from .datasets import load_dataset
+        data = load_dataset(spec)
+        expected_fingerprint = job.get("fingerprint") or data["fingerprint"]
+        if data["fingerprint"] != expected_fingerprint:
+            raise IntegrityError("Training inputs changed since this run was planned. Current recovery data was preserved.")
         if state and state.get("fingerprint") != expected_fingerprint:
             raise IntegrityError("Checkpoint training inputs or configuration changed. Current recovery data was preserved.")
+        if state:
+            validate_checkpoint_payload(state, spec, data)
+        assets = checkpoint_assets(state, checkpoint.parent) if state else {}
         manifest = verify_export(manifests[0].parent) if manifests else None
         if manifest:
             metadata = manifest.get("metadata", {})
             if metadata.get("job_id") != job["id"] or metadata.get("recipe") != spec["recipe"]:
                 raise IntegrityError("This model export belongs to a different training run.")
+            if metadata.get("fingerprint", expected_fingerprint) != expected_fingerprint or metadata.get("recipe_version", spec.get("recipe_version", 1)) != spec.get("recipe_version", 1):
+                raise IntegrityError("This model export uses different training inputs or a different recipe version.")
+            if type(metadata.get("step")) is not int or not 0 <= metadata["step"] <= spec["steps"] or (state and metadata["step"] != state["step"]):
+                raise IntegrityError("Model export and checkpoint progress do not match this run.")
         step = state.get("step", 0) if state else manifest["metadata"].get("step", 0)
         current = job_dir / "checkpoint.json"
         current_hash = hashlib.sha256(current.read_bytes()).hexdigest() if current.exists() else None
@@ -96,7 +108,7 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
         if current.exists():
             try:
                 current_step = max(current_step, load_checkpoint(current)["step"])
-            except IntegrityError:
+            except (IntegrityError, OSError):
                 pass
         digest_data = {"job": job["id"], "current": current_hash, "checkpoint": hashlib.sha256(checkpoint.read_bytes()).hexdigest() if checkpoint else None, "manifest": manifest, "step": step}
         digest = hashlib.sha256(json.dumps(digest_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -110,11 +122,22 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
             raise IntegrityError("Export progress does not reach the requested training target.")
         if manifest:
             files = {item["path"]: manifests[0].parent.joinpath(*_safe_parts(item["path"]).parts) for item in manifest["files"]}
-            export_artifacts(files, job_dir / "export", metadata)
+            export_artifacts(files, job_dir / "export", metadata,
+                             expected_hashes={item["path"]: item["sha256"] for item in manifest["files"]})
         if checkpoint:
+            for name, asset in assets.items():
+                contents = asset.read_bytes()
+                if hashlib.sha256(contents).hexdigest() != state["payload"]["weights_sha256"]:
+                    raise IntegrityError("Checkpoint base weights changed during import")
+                target = job_dir.joinpath(*_safe_parts(name).parts)
+                if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != state["payload"]["weights_sha256"]:
+                    atomic_bytes(target, contents)
             if current.exists():
                 try:
-                    load_checkpoint(current)
+                    previous_state = load_checkpoint(current)
+                    validate_checkpoint_payload(previous_state, spec, data)
+                    if previous_state.get("job_id") != job["id"] or previous_state.get("fingerprint") != expected_fingerprint:
+                        raise IntegrityError("Existing checkpoint belongs to a different run")
                     atomic_bytes(job_dir / "checkpoint.previous.json", current.read_bytes())
                 except IntegrityError:
                     atomic_bytes(job_dir / ("checkpoint.replaced-" + uuid.uuid4().hex + ".json"), current.read_bytes())
@@ -122,6 +145,7 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
         return {"status": "completed" if manifest else "paused", "step": step,
                 "loss": state.get("loss") if state else manifest["metadata"].get("loss"),
                 "device": state.get("device") if state else manifest["metadata"].get("device"),
+                "evaluation": manifest.get("metadata", {}).get("evaluation", {}) if manifest else job.get("evaluation", {}),
                 "checkpoint": {"path": str(job_dir / "checkpoint.json"), "step": step} if checkpoint else None}
     finally:
         if staging.exists():

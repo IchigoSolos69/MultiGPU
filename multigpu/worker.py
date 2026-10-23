@@ -89,6 +89,7 @@ class TrainingContext:
         self._elapsed_before = resumed.get("elapsed_seconds", 0.0) if resumed else 0.0
         self._started = time.monotonic()
         self._last_checkpoint = self._last_summary = self._last_heartbeat = self._started
+        self._last_progress = self._started
         self._state_factory = None
         self._checkpoint_step = None
         self._fingerprint = ""
@@ -125,7 +126,16 @@ class TrainingContext:
                 self.emit("heartbeat", checkpoint_step=self._checkpoint_step)
                 self._last_heartbeat = now
             if now - self._last_summary >= self.spec["summary_interval_seconds"]:
-                self.emit("summary", checkpoint_step=self._checkpoint_step)
+                allowance = self.spec.get("allowance_observation") or {}
+                requested = (self.output_dir / "STOP").exists()
+                stalled = self.phase == "training" and now - self._last_progress >= 300
+                self.emit("summary", checkpoint_step=self._checkpoint_step,
+                          checkpoint_age_seconds=round(now - self._last_checkpoint, 3) if self._checkpoint_step is not None else None,
+                          remaining_session_seconds=round(max(0, self.spec["runtime_seconds"] - (now - self._started)), 3),
+                          active_gpu_count=None if self.spec["recipe"] == "custom" else int(self.device == "cuda"),
+                          allowance_confidence=allowance.get("confidence", "not_metered" if allowance.get("source") == "local" else "unknown"),
+                          required_action="Waiting for a checkpoint and stop acknowledgment" if requested else
+                                          "Review worker logs: no training step was reported in five minutes" if stalled else None)
                 self._last_summary = now
 
     def start_telemetry(self):
@@ -156,6 +166,7 @@ class TrainingContext:
             if "device" in metrics:
                 self.device = str(metrics.pop("device"))
             self.step, self.loss = next_step, float(loss)
+            self._last_progress = time.monotonic()
             self.emit("metric", metrics=metrics)
             self._tick()
 

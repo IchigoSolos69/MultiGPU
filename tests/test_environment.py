@@ -10,7 +10,9 @@ from multigpu.environment import EnvironmentSetup
 
 class EnvironmentTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        temporary_root = Path(__file__).resolve().parents[1] / ".test-runs"
+        temporary_root.mkdir(exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=temporary_root)
         self.service = SimpleNamespace(lock=threading.RLock(), jobs=lambda: [], hardware={}, root=Path(self.temp.name), environment_busy=False)
         self.setup = EnvironmentSetup(self.service)
 

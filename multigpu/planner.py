@@ -95,7 +95,7 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
         elif pid == "codespaces":
             mode, eligible, reason = "development", False, "Repository development helper; excluded from the general training pool."
         elif mode != "automatic":
-            reason = "Prepare a notebook bundle and run it in your own provider account. " + provider.get("free_summary", "")
+            reason = "Follow the in-app setup guide and run the training notebook in your own provider account. " + provider.get("free_summary", "")
             eligible = False
         if pid != "local" and eligible:
             if spec["recipe"] == "custom" and not config.get("allow_custom_scripts"):
@@ -111,7 +111,7 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
                 budget = connection.get("budget") or {}
                 if spec["free_only"]:
                     if not budget.get("verified") or budget.get("max_out_of_pocket") != 0:
-                        eligible, reason = False, "Free-only jobs require a verified zero out-of-pocket cap, including storage and transfer. Prepare a guided bundle while this guardrail is unverified."
+                        eligible, reason = False, "Free-only jobs require a verified zero out-of-pocket cap, including storage and transfer. Use the in-app guided setup while this guardrail is unverified."
                 else:
                     reported_limit = config.get("native_spend_limit")
                     try:

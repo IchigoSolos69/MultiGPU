@@ -359,6 +359,180 @@ def _embedded(stage):
             "runpy.run_path(str(base / 'run.py'), run_name='__main__')\n")
 
 
+def needs_payload(spec, base_dir=None):
+    """Conservative import-size bound, shared by the guide and artifact builders."""
+    size = 0
+    for key in ("dataset_path", "script_path", "resume_from", "weights_path"):
+        if not spec.get(key):
+            continue
+        source = Path(spec[key]).expanduser()
+        if not source.is_absolute() and base_dir:
+            source = Path(base_dir) / source
+        if source.is_symlink() or (hasattr(source, "is_junction") and source.is_junction()) or not source.exists():
+            raise ConnectorError(f"The configured {key} input is missing or is a symbolic link. Restore it before preparing training files.")
+        for item in source.rglob("*") if source.is_dir() else [source]:
+            if item.is_symlink() or (hasattr(item, "is_junction") and item.is_junction()):
+                raise ConnectorError("Symbolic links are not accepted in training inputs.")
+            if item.is_file():
+                # Include ZIP directory overhead and base64 expansion headroom.
+                size += item.stat().st_size + 2 * len(str(item.relative_to(source) if source.is_dir() else item.name).encode("utf-8")) + 256
+    return size > 4 * 1024 * 1024
+
+
+def _training_manifest(stage):
+    files = []
+    for file, relative in _payload_files(stage):
+        with file.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        files.append({"path": relative, "size_bytes": file.stat().st_size, "sha256": digest})
+    if len(files) > 100000:
+        raise ConnectorError("Training inputs contain too many individual files for notebook delivery.")
+    return json.dumps({"format": "multigpu-training-payload-v1", "files": files}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+_EXTERNAL_PAYLOAD_RUNNER = r'''import hashlib, json, os, runpy, shutil, sys, zipfile
+from pathlib import Path, PurePosixPath
+root = Path.cwd()
+name = "multigpu-payload-manifest.json"
+archives = [root / "training-payload.zip"]
+manifests = [root / name, root / "training-payload" / name]
+if Path("/kaggle/input").is_dir():
+    archives.extend(Path("/kaggle/input").rglob("training-payload.zip"))
+    manifests.extend(Path("/kaggle/input").rglob(name))
+archive, source, manifest_bytes = None, None, None
+for candidate in archives:
+    if candidate.is_file():
+        trial = zipfile.ZipFile(candidate)
+        try:
+            content = trial.read(name)
+        except KeyError:
+            trial.close()
+            continue
+        if hashlib.sha256(content).hexdigest() == EXPECTED_MANIFEST:
+            archive, manifest_bytes = trial, content
+            break
+        trial.close()
+if manifest_bytes is None:
+    for candidate in manifests:
+        if candidate.is_file() and hashlib.sha256(candidate.read_bytes()).hexdigest() == EXPECTED_MANIFEST:
+            source, manifest_bytes = candidate.parent.resolve(), candidate.read_bytes()
+            break
+if manifest_bytes is None:
+    raise FileNotFoundError("Upload this notebook's matching training-payload.zip into its working folder, or attach its extracted files as a Kaggle input. Download both files again if they came from different preparations.")
+manifest = json.loads(manifest_bytes)
+if manifest.get("format") != "multigpu-training-payload-v1" or not 0 < len(manifest.get("files", [])) <= 100000:
+    raise ValueError("Invalid training payload manifest")
+if sum(item["size_bytes"] for item in manifest["files"]) > 520 * 1024 * 1024:
+    raise ValueError("Training payload exceeds its size limit")
+base = root / ("multigpu-payload-" + EXPECTED_MANIFEST[:12])
+base.mkdir(exist_ok=True)
+seen = set()
+for item in manifest["files"]:
+    relative = PurePosixPath(item["path"])
+    if relative.is_absolute() or ":" in item["path"] or "\\" in item["path"] or any(p in ("", ".", "..") for p in item["path"].split("/")) or item["path"].casefold() in seen:
+        raise ValueError("Unsafe training payload path")
+    seen.add(item["path"].casefold())
+    target = base.joinpath(*relative.parts)
+    if not target.resolve().is_relative_to(base.resolve()):
+        raise ValueError("Unsafe training payload destination")
+    if archive is not None:
+        content = archive.read(item["path"])
+    else:
+        origin = source.joinpath(*relative.parts)
+        if not origin.resolve().is_relative_to(source):
+            raise ValueError("Unsafe extracted training payload path")
+        content = origin.read_bytes()
+    if len(content) != item["size_bytes"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
+        raise ValueError("Training payload contents changed: " + item["path"])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+if archive is not None:
+    archive.close()
+sys.path.insert(0, str(base))
+runpy.run_path(str(base / "run.py"), run_name="__main__")
+'''
+
+
+def _notebook_document(source, spec, separate):
+    dependencies = "The starter needs only Python 3.11 or later."
+    if spec.get("recipe") == "pytorch":
+        dependencies = "Use a runtime with compatible PyTorch installed; CUDA is required only when this run explicitly selects CUDA."
+    elif spec.get("recipe") == "image":
+        dependencies = "Use a runtime with compatible torch, torchvision and Pillow installed. Verified ResNet-18 weights are included in the training payload."
+    elif spec.get("recipe") == "custom":
+        dependencies = "Install the dependencies required by your trusted custom script in this runtime before running training."
+    introduction = "# MultiGPU training\n" + dependencies + "\n"
+    introduction += "Upload training-payload.zip alongside this notebook before running the first cell.\n" if separate else "This notebook contains the selected training code, inputs and any recovery checkpoint.\n"
+    save = ("import os, shutil\nfrom pathlib import Path\n"
+            "output = Path(os.environ.get('MULTIGPU_OUTPUT_DIR', str(Path.cwd() / 'output'))).resolve()\n"
+            "if not (output / 'checkpoint.json').is_file():\n    raise FileNotFoundError('Run training first; no checkpoint has been saved yet')\n"
+            "result = shutil.make_archive(str(output.parent / 'multigpu-results'), 'zip', root_dir=output)\n"
+            "print('Download this results file and import it into MultiGPU:', result)\n")
+    def cell(kind, content):
+        value = {"cell_type": kind, "metadata": {}, "source": content.splitlines(True)}
+        if kind == "code":
+            value.update(execution_count=None, outputs=[])
+        return value
+    return {"cells": [cell("markdown", introduction), cell("code", source),
+                      cell("markdown", "## Save results\nAfter training completes or pauses, run this cell and download multigpu-results.zip. It contains the checkpoint, model files and required image weights. Keep it until the app verifies the import.\n"),
+                      cell("code", save)],
+            "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}},
+            "nbformat": 4, "nbformat_minor": 5}
+
+
+def _remove_notebook_stage(stage, job_dir):
+    stage = Path(stage)
+    if stage.is_symlink() or (hasattr(stage, "is_junction") and stage.is_junction()) or stage.resolve().parent != Path(job_dir).resolve() or not stage.name.startswith("payload-"):
+        raise ConnectorError("Refusing cleanup outside the prepared notebook directory.")
+    shutil.rmtree(stage)
+
+
+def build_notebook(provider_id, config, spec_path, job_dir):
+    """Return the actual runnable notebook; setup instructions remain in the app."""
+    get_provider(provider_id)
+    _check_config(config)
+    original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
+    separate = needs_payload(original, Path(spec_path).parent)
+    stage, spec = _stage(spec_path, job_dir)
+    try:
+        if separate:
+            digest = hashlib.sha256(_training_manifest(stage)).hexdigest()
+            source = "EXPECTED_MANIFEST = " + repr(digest) + "\n" + _EXTERNAL_PAYLOAD_RUNNER
+        else:
+            source = _embedded(stage)
+        from .artifacts import atomic_json
+        target = Path(job_dir) / "training.ipynb"
+        atomic_json(target, _notebook_document(source, spec, separate))
+        if target.stat().st_size >= 8 * 1024 * 1024:
+            raise ConnectorError("This notebook exceeds the safe import size. Reduce selected inputs before preparing it again.")
+        return target
+    finally:
+        _remove_notebook_stage(stage, job_dir)
+
+
+def build_notebook_payload(provider_id, config, spec_path, job_dir):
+    """Return selected training inputs, never an instruction archive."""
+    get_provider(provider_id)
+    _check_config(config)
+    original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
+    if not needs_payload(original, Path(spec_path).parent):
+        raise ConnectorError("This small job's notebook already includes its training inputs; no separate payload is needed.")
+    stage, _ = _stage(spec_path, job_dir)
+    target = Path(job_dir) / "training-payload.zip"
+    temporary = target.with_suffix(".zip.tmp")
+    try:
+        manifest = _training_manifest(stage)
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("multigpu-payload-manifest.json", manifest)
+            for file, relative in _payload_files(stage):
+                archive.write(file, relative)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+        _remove_notebook_stage(stage, job_dir)
+    return target
+
+
 def build_bundle(provider_id, config, spec_path, job_dir):
     """Create a self-contained notebook ZIP; this does not start remote compute."""
     get_provider(provider_id)
@@ -724,7 +898,7 @@ def _ingest_logs(text, job_dir):
             event = json.loads(line[start:])
         except ValueError:
             continue
-        if isinstance(event, dict) and event.get("type") in {"started", "metric", "summary", "checkpoint", "completed", "paused", "error", "export"}:
+        if isinstance(event, dict) and event.get("type") in {"started", "metric", "summary", "checkpoint", "completed", "paused", "error", "export", "heartbeat"}:
             serialized = json.dumps(event, sort_keys=True, separators=(",", ":"))
             if serialized not in existing:
                 events.append(serialized)
@@ -753,9 +927,13 @@ def _modal_snapshot(modal, handle, job_dir):
             temporary = target.with_suffix(".download.tmp")
             temporary.write_bytes(content)
             if name == "checkpoint.json":
-                from .artifacts import load_checkpoint
+                from .artifacts import checkpoint_assets, load_checkpoint, validate_checkpoint_payload
                 try:
                     checkpoint = load_checkpoint(temporary)
+                    expected = json.loads((Path(job_dir) / "spec.json").read_text(encoding="utf-8"))
+                    if (expected.get("id") and checkpoint.get("job_id") != expected["id"]) or (expected.get("fingerprint") and checkpoint.get("fingerprint") != expected["fingerprint"]):
+                        raise ValueError("Snapshot identity differs from the current run")
+                    validate_checkpoint_payload(checkpoint, expected)
                 except (ValueError, OSError):
                     temporary.unlink(missing_ok=True)
                     continue  # Keep the last good local checkpoint while a remote snapshot is incomplete.
@@ -772,6 +950,7 @@ def _modal_snapshot(modal, handle, job_dir):
                         if hashlib.sha256(content).hexdigest() != expected_hash:
                             raise ConnectorError("Remote checkpoint weights failed their checksum; the last good checkpoint was preserved.")
                         atomic_bytes(asset, content)
+                checkpoint_assets(checkpoint, job_dir)
             temporary.replace(target)
     return _read_local_state(job_dir)
 
@@ -949,7 +1128,8 @@ def cancel(provider_id, config, handle, job_dir):
 
 def _publish_outputs(download, job_dir):
     """Normalize provider folder wrappers into the coordinator's artifact layout."""
-    from .artifacts import atomic_bytes, export_artifacts, load_checkpoint, verify_export
+    from .artifacts import (IntegrityError, atomic_bytes, checkpoint_assets, export_artifacts,
+                            load_checkpoint, validate_checkpoint_payload, verify_export)
     download, job_dir = Path(download), Path(job_dir)
     candidates = []
     for folder in [download, *(p for p in download.rglob("*") if p.is_dir())]:
@@ -977,20 +1157,25 @@ def _publish_outputs(download, job_dir):
         checkpoint_state = load_checkpoint(checkpoint)
         if expected.get("id") and (checkpoint_state.get("job_id") != expected["id"] or checkpoint_state.get("recipe") != expected.get("recipe")):
             raise ConnectorError("Downloaded checkpoint belongs to a different training run.")
-        payload = checkpoint_state.get("payload", {})
-        if payload.get("weights_asset"):
-            relative = _safe_relative(payload["weights_asset"])
-            asset = source.joinpath(*relative.parts)
-            checksum = payload.get("weights_sha256")
-            if not asset.is_file() or hashlib.sha256(asset.read_bytes()).hexdigest() != checksum:
-                raise ConnectorError("Downloaded checkpoint is missing its verified pretrained weights asset.")
-            atomic_bytes(job_dir.joinpath(*relative.parts), asset.read_bytes())
+        if expected.get("fingerprint") and checkpoint_state.get("fingerprint") != expected["fingerprint"]:
+            raise ConnectorError("Downloaded checkpoint uses different training inputs.")
+        try:
+            validate_checkpoint_payload(checkpoint_state, expected)
+            for name, asset in checkpoint_assets(checkpoint_state, source).items():
+                relative = _safe_relative(name)
+                contents = asset.read_bytes()
+                if hashlib.sha256(contents).hexdigest() != checkpoint_state["payload"]["weights_sha256"]:
+                    raise IntegrityError("Checkpoint base weights changed during collection")
+                atomic_bytes(job_dir.joinpath(*relative.parts), contents)
+        except IntegrityError as exc:
+            raise ConnectorError(str(exc)) from exc
     if (source / "export" / "manifest.json").is_file():
         manifest = verify_export(source / "export")
         if expected.get("id") and manifest.get("metadata", {}).get("job_id") != expected["id"]:
             raise ConnectorError("Downloaded model belongs to a different training run.")
         files = {entry["path"]: source / "export" / entry["path"] for entry in manifest["files"]}
-        export_artifacts(files, job_dir / "export", manifest.get("metadata", {}))
+        export_artifacts(files, job_dir / "export", manifest.get("metadata", {}),
+                         expected_hashes={entry["path"]: entry["sha256"] for entry in manifest["files"]})
     if checkpoint.is_file():
         atomic_bytes(job_dir / "checkpoint.json", checkpoint.read_bytes())
     if (source / "events.jsonl").is_file():
