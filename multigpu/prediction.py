@@ -13,7 +13,10 @@ def sigmoid(value: float) -> float:
     return 1 / (1 + math.exp(-max(-700.0, min(700.0, value))))
 
 
-def tabular_probability(model: dict, row: list[float]) -> float:
+def tabular_probability(model: dict, row: list[float], *, standardize=True) -> float:
+    if standardize and model.get("standardization"):
+        transform = model["standardization"]
+        row = [(value - mean) / std for value, mean, std in zip(row, transform["mean"], transform["std"])]
     if model["format"] == "multigpu-linear-binary-v1":
         return sigmoid(sum(a * b for a, b in zip(model["weights"], row)) + model["bias"])
     if model["format"] == "multigpu-pytorch-mlp-v1":
@@ -74,6 +77,8 @@ def predict(export_dir: Path, inputs: dict) -> dict:
         if model.get("base_weights") not in included:
             raise ValueError("Image model's verified base weights are missing")
         return _image_predict(folder, model, inputs.get("image_path", ""))
+    if model.get("format") not in ("multigpu-linear-binary-v1", "multigpu-pytorch-mlp-v1"):
+        raise ValueError("Custom model exports use their own prediction adapter; see the script's inference instructions")
     schema = json.loads((folder / "input_schema.json").read_text(encoding="utf-8")) if "input_schema.json" in included else None
     raw = inputs.get("features")
     if isinstance(raw, dict):

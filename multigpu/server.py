@@ -104,6 +104,8 @@ def make_server(service, port=8765):
                     return self.send(200, service.save_settings(raw))
                 if parts == ["api", "draft"]:
                     return self.send(200, {"draft": service.save_draft(raw)})
+                if parts == ["api", "cache", "cleanup"]:
+                    return self.send(200, service.clean_cache())
                 if parts == ["api", "datasets", "inspect"]:
                     from .datasets import inspect_dataset
                     return self.send(200, inspect_dataset(raw))
@@ -164,10 +166,14 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--data-dir", type=Path, default=Path(os.environ.get("MULTIGPU_HOME", ".multigpu")))
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--connection-file", type=Path, help="Write the selected loopback address for the desktop launcher")
     args = parser.parse_args(argv)
     service = Service(args.data_dir)
     server = make_server(service, args.port)
     url = f"http://127.0.0.1:{server.server_port}"
+    if args.connection_file:
+        from .artifacts import atomic_json
+        atomic_json(args.connection_file.resolve(), {"url": url, "pid": os.getpid(), "workspace_dir":str(service.root)})
     print(f"MultiGPU is running at {url}\nState and training runs: {service.root}", flush=True)
     if not args.no_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
@@ -179,3 +185,10 @@ def main(argv=None):
         service.shutdown()
         server.server_close()
         service.store.close()
+        if args.connection_file and args.connection_file.exists():
+            try:
+                current = json.loads(args.connection_file.read_text(encoding="utf-8"))
+                if current.get("pid") == os.getpid():
+                    args.connection_file.unlink()
+            except (OSError, ValueError):
+                pass

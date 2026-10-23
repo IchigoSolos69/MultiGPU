@@ -1,116 +1,120 @@
 # MultiGPU
 
-A local training workspace for your own compute accounts. Browse all 13 requested providers, train locally, submit supported provider jobs, prepare portable notebooks, and verify model exports on your computer.
+A local training workspace that uses your own compute accounts and saves verified models on your computer. The Windows-first journey supports **tabular binary classification**, **image classification**, and trusted custom Python training.
 
-## Run
+## Start
 
-Python **3.11 or newer** is the only requirement for the dashboard and CPU starter. No Node installation, frontend build, hosted account, or cloud credential is required.
+On Windows, double-click `start.cmd` for the tray application, or run `./start.ps1` for a terminal session. The launcher prepares an application-owned environment; it does not install packages into system Python. Closing the browser leaves the tray controller running.
 
-```powershell
-python -m multigpu
-```
-
-Open **http://127.0.0.1:8765**. On Windows, double-click `start.cmd` or run `./start.ps1`. The launcher uses a local virtual environment, the Python launcher, or the bundled Codex Python runtime when available. You can set `MULTIGPU_PYTHON` to a full interpreter path. To install a console entry point:
+For development, Python 3.11+ runs the dependency-free dashboard and CPU starter:
 
 ```powershell
-python -m pip install -e .
-multigpu
+python -m multigpu --no-browser
 ```
 
-Options: `--port 8765`, `--data-dir .multigpu`, `--no-browser`. State, jobs and default model exports live in `.multigpu/`. Set a different model folder in Settings. One controller may use a data directory at a time.
+The command-line default is http://127.0.0.1:8765 and `.multigpu/` for state. The packaged tray chooses an available loopback port, uses `%LOCALAPPDATA%/MultiGPU/workspace`, and lets you choose an existing workspace for the next start. One controller may own a workspace at a time. Existing data receives a SQLite backup before its version-two metadata migration.
 
-## First training run
+Build and test the Windows installer using [packaging instructions](packaging/README.md). Optional training packages are not bundled into the base installer. Installer signing, a clean Windows VM, live provider accounts and actual CUDA hardware require separate release qualification.
 
-1. Choose **New training → Starter classifier → Your computer**.
-2. Keep free-only selected and preview the plan.
-3. Start training. The runner learns real binary classification weights using SGD, records loss and saves resumable checkpoints.
-4. Completed model files are verified with SHA-256 and copied to the selected export folder. Download a ZIP from the run page if desired.
+## From data to a usable model
 
-The starter uses explicitly generated demonstration data unless you provide a CSV. A CSV contains numeric feature columns followed by a final binary `0`/`1` label; an optional header is accepted. Generated-data loss is not evidence of quality on your own task.
+1. **Task & data:** try the generated tabular sample, choose a CSV, or choose an image class-folder directory. Inspect it before sending anything to a provider.
+2. **Training:** name the run and review recipe defaults. Advanced settings include target, batch size, learning rate, seed and device. Dependency setup reports its progress in the app.
+3. **Compute & limits:** choose a primary resource and order explicit fallbacks. Free-only is selected by default. Paid usage requires a new per-run choice.
+4. **Review:** preview the exact data, resource order and training target. A launch requires the matching preview digest; changed inputs require another preview.
+5. **Follow and recover:** monitor actual progress, independent heartbeats, checkpoints and required actions. Interrupted cloud monitoring reconnects to saved provider identities before another attempt can start.
+6. **Evaluate and export:** inspect held-out metrics, verify the local model, try a prediction and download a portable inference example.
 
-The **PyTorch classifier** uses CUDA when a compatible PyTorch build is available, otherwise CPU. Install the build for your hardware using [PyTorch's installation instructions](https://pytorch.org/get-started/locally/), then restart MultiGPU. PyTorch is optional and is not automatically downloaded. The included classification recipes require the model and dataset to fit the selected device; use your own streaming training script for larger datasets.
+Drafts survive navigation and restart. Paid and trusted-script execution confirmations are not restored. Repeating a run creates an editable draft and never launches compute by itself.
 
-## Provider support
+### Tabular data
 
-Provider facts are dated **21 October 2026**; quota and entitlements are checked separately. An implemented adapter is not a live account certification.
+Use numeric feature columns and a binary `0`/`1` label. An optional header and selectable label column are supported. New recipes require at least five rows in each class and use a seeded stratified 80/20 split. Feature standardization is fitted only on training rows and saved with the model. The dependency-free classifier needs no extra libraries; the small PyTorch classifier supports CPU or qualified CUDA.
 
-| Provider | Application support |
+```csv
+height,weight,label
+165,62,0
+151,45,1
+178,78,0
+```
+
+This excerpt illustrates the format; include at least five examples of each label. Missing, nonnumeric and nonfinite values are rejected with an actionable error. Generated sample data is explicitly a demonstration, not evidence of performance on your task.
+
+### Image data
+
+Choose a folder with at least two class subfolders and five readable images per class:
+
+```text
+dataset/
+  cats/photo-1.jpg
+  cats/photo-2.jpg
+  ...
+  dogs/photo-1.jpg
+  dogs/photo-2.jpg
+  ...
+```
+
+The built-in recipe freezes an official pretrained ResNet-18 backbone and trains its classification head. Defaults are five epochs, batch size 16, learning rate .001 and SGD momentum .9. Fixed RGB preprocessing, class order, seeded validation split, data cursor and RNG state travel with the model/checkpoint. Official base weights are downloaded and SHA-256 checked during explicit environment preparation, before paid compute is allocated.
+
+Prepare the image environment in the dashboard. CPU libraries are the default; CUDA preparation is a separate choice. All training data must fit the recipe's documented host-memory and staging limits; GPU batches are transferred individually. Large or specialized models use custom scripts.
+
+## Providers and spending
+
+All 13 requested providers plus the local computer remain in the directory. Provider facts, authenticated identity, observed quota, actual hardware and application support are distinct. Documentation references are dated; missing observations remain unknown.
+
+| Resource | Implemented mode |
 |---|---|
-| Local CPU / CUDA | Real starter and optional PyTorch training; pause, resume, logs and verified export |
-| Kaggle | Native CLI quota, bounded submission, logs/status and artifact download; immediate remote stop is unavailable |
-| Modal | Optional SDK integration through detached Functions and persistent Volumes; paid execution only after explicit opt-in and reported native billing controls |
-| Lightning | Optional SDK execution in an existing dedicated Studio; explicit startup/shutdown consent and reported provider limit required |
-| Paperspace, Colab | Self-contained assisted notebook bundles and verified result import |
-| Deepnote, Hex, Datalore, Fastero | Assisted CPU notebook workflows; eligible GPU resources remain provider/plan dependent |
-| Databricks Free Edition | Assisted native notebook workflow, subject to account eligibility, networking and non-commercial restrictions |
-| JupyterHub | Assisted notebook workflow on resources allocated by your host or institution |
-| Colab Enterprise | Assisted cloud notebook workflow on the user's own billing/IAM account |
-| Codespaces | Development information only; excluded from the generic training pool |
+| Local CPU / CUDA | Built-in and trusted custom recipes, checkpoint/resume and verified exports; CUDA qualification depends on your installation |
+| Kaggle | Native CLI quota, bounded submission, logs/status and artifact retrieval; stopping immediately requires Kaggle's own control |
+| Modal | Native Functions/Volumes adapter with durable identity and cooperative pause; paid opt-in required while zero-spend controls remain unverified |
+| Lightning | Existing dedicated Studio adapter with machine/account checks, recovery identity and explicit start/stop authorization |
+| Paperspace, Colab | Assisted notebooks and verified result import |
+| Deepnote, Hex, Datalore, Fastero | Capability-dependent notebook/development information; free CPU and paid GPU access remain separate |
+| Databricks Free Edition | Conditional AI Runtime eligibility; assisted execution subject to workspace restrictions and non-commercial use |
+| JupyterHub | Assisted notebook execution on hardware allocated by your institution or host |
+| Colab Enterprise | Assisted notebook execution on the user's billing/IAM project |
+| Codespaces | Development information; excluded from the general training pool |
 
-### Native authentication
+An implemented adapter is **not** live account certification. Provider credentials stay in their native authentication tools. The dashboard rejects passwords/tokens and stores only nonsecret connection settings.
 
-Install optional tools into the **same Python environment** as the controller and log in directly with the provider:
+Free-only automatic execution is admitted for local compute and eligible Kaggle quota. Modal/Lightning credit-backed free-only automation remains blocked because the application cannot independently verify zero out-of-pocket enforcement covering compute, storage and transfer. A reported native spending limit is a user declaration. The application does not purchase plans, add credits or activate paid fallbacks.
 
-```powershell
-python -m pip install -e ".[kaggle]"
-kaggle auth login
-kaggle quota
+Native authentication and dependency installation must target the application's displayed Python environment. Use **Save & check** to inspect identity, actual compute and billing evidence. Read provider terms and configure any provider-side billing controls directly with that provider.
 
-python -m pip install -e ".[modal]"
-modal setup
+## Interruption, notebooks and recovery
 
-python -m pip install -e ".[lightning]"
-```
+- Each provider attempt has a persisted identity before submission. Unconfirmed submissions block duplicate retries; use reconciliation and the provider console to resolve uncertainty.
+- Lost connectivity retains the last known execution state and account reservation while monitoring retries. Restart reconnects existing executions rather than silently launching replacements.
+- Pause is capability-specific. Cooperative pause waits for a durable checkpoint; cancellation may lose uncommitted progress; Kaggle requires its native Stop control. A disconnected controller never proves remote compute stopped.
+- Heartbeats are emitted every 30 seconds, summaries every 300 seconds and checkpoints every 60 seconds. Controller fetch time, worker reachability and actual metric age are displayed separately.
+- Assisted notebooks do not provide guaranteed local live telemetry. Check progress in the provider notebook, download its output folder/ZIP, then preview and import it locally.
+- Paused guided runs keep notebook preparation and import controls. A continuation bundle contains verified recovery state and preserves the original target.
+- Imports verify hashes, job identity, recipe/configuration and progress. Older state requires explicit rollback. Recovery can restore the previous verified checkpoint.
+- A finished run can choose another export destination after a storage failure. Downloaded ZIPs contain only manifest-listed verified artifacts. Remote recovery files remain until you clean them up directly.
 
-Follow Lightning's native SDK authentication instructions for your account. The dashboard stores connection names and non-secret settings in SQLite. It rejects passwords and API tokens; native credential stores and environment variables remain under your control. SDK/CLI versions and provider permissions must be validated against your account.
+Selecting multiple resources supplies ordered execution/fallback options. It does not combine unrelated free GPUs into one distributed cluster, pool their VRAM, or create experiments automatically. The optional same-host benchmark is a qualification prototype, not a claim of cross-provider speedup.
 
-Free-only automatic execution is enabled for local compute and eligible Kaggle quota. **Modal/Lightning credit-backed free-only automation is blocked** because this implementation cannot independently verify a zero out-of-pocket limit covering all charges. Use their guided notebook bundles, or explicitly enable paid execution, enter your provider-configured limit, and confirm entitlement and billing controls. A user-reported limit is not independent verification. Provider charges, electricity, storage and transfer remain yours.
+## Custom Python
 
-Lightning automation requires a dedicated Studio with permission to stop it after result collection. If the controller goes offline, a Studio can remain running; native provider limits and the provider console remain essential. Modal Volumes are retained remotely until you remove them directly. The app never purchases plans, tops up credits, or deletes remote recovery artifacts.
+[examples/custom_train.py](examples/custom_train.py) supplies a working starter. A trusted script defines `train(ctx)`, restores `ctx.resume_state`, calls `ctx.report(loss, step)`, polls `ctx.should_stop()`, checkpoints complete model/optimizer/RNG state for the reported step, and exports named usable model files through `ctx.export(files)`.
 
-## Assisted notebooks and result import
+Custom scripts run with your user permissions and define their own dependencies and evaluation. Cooperative stopping and complete resumable state are part of their contract. Existing version-one jobs retain their original sampling and fingerprints; new recipe behavior is explicitly versioned.
 
-Preview a provider, select **Prepare notebook**, extract `training.ipynb`, and run it in your own account. The notebook embeds the worker, selected data, script and checkpoint. Review its contents before uploading private data. Set compute and provider billing controls yourself. PyTorch/custom dependencies must already be available or installed in that notebook.
-
-Progress is visible in the provider notebook. The local dashboard cannot promise live telemetry for manually launched notebooks. Download the generated `output/` folder (or ZIP) and enter its local path on the run page. Import checks hashes, checkpoint identity and training target before accepting results. A paused imported run can explicitly resume on your computer; migration never lowers its target. Standalone custom scripts must bring their own required modules/data beyond the selected input files.
-
-## Checkpoints, limits and parallel work
-
-- Training summaries are emitted every **300 seconds**, separately from **60-second** checkpoint cadence. The dashboard refreshes every five seconds; remote updates depend on provider logs and durable output commits.
-- Each worker invocation has a session limit and reserves time for a final checkpoint. On expiry, the coordinator can continue a committed checkpoint on another selected eligible provider, or pause. Manual pause never automatically starts another resource.
-- Model, optimizer, RNG and progress state are preserved by the included recipes. Compatibility fingerprints reject a changed dataset, script or training configuration.
-- Incomplete or corrupted checkpoints are rejected. The previous good checkpoint and prior exports are retained. Export failure preserves the completed training state and can be retried after fixing storage.
-- Multiple independent jobs can run simultaneously. A single cloud account is not double-reserved by the scheduler. Selecting several providers supplies execution/failover options; it does not automatically combine their VRAM or invent experiments.
-- `python -m multigpu.benchmark --output .multigpu/benchmark.json` measures a **same-host two-CUDA-GPU DDP prototype** when available. It reports unavailable rather than inventing performance. This synthetic benchmark does not qualify arbitrary recipes or cross-provider networking for production execution. Cross-provider same-model training remains unqualified and is not automatically enabled.
-
-## Custom Python / PyTorch
-
-Select a trusted `.py` file implementing `train(ctx)` and confirm that it may run with your user permissions. [examples/custom_train.py](examples/custom_train.py) is a runnable dependency-free example.
-
-```python
-def train(ctx):
-    state = ctx.resume_state or {"weight": 0.0}
-    for step in range(ctx.step + 1, ctx.spec["steps"] + 1):
-        if ctx.should_stop():
-            break
-        # Update model and optimizer, then report the matching state.
-        loss = update(state)
-        ctx.report(loss, step)
-        ctx.checkpoint(state)
-    ctx.checkpoint(state)
-    if ctx.step == ctx.spec["steps"]:
-        ctx.export({"model.json": serialize_model(state)})
-```
-
-Custom scripts must save full resumable state for the **current reported step**, check `ctx.should_stop()`, and export usable model files on completion. They are trusted programs, not sandboxed plugins. No generic wrapper can guarantee stopping or resuming arbitrary unmodified training code.
-
-## Validation
+## Verification
 
 ```powershell
 python -m unittest discover -s tests -v
 node --check multigpu/static/app.js
 ```
 
-Tests cover real learning and exact resume, deadline/pause behavior, hashes and traversal, disk exhaustion, guided notebook execution/import, missing SDKs, quota and spending gates, provider mocks, local HTTP authentication/origin checks, and export persistence. GPU and live account integration tests require your own hardware and credentials; no billed jobs are launched by the test suite.
+Use an isolated controller for browser acceptance; the test refuses the normal user port:
 
-The backend binds exclusively to loopback. Mutations require a session token and same-origin requests; provider secrets are not accepted by its API. Keep this trusted local application off public interfaces.
+```powershell
+python -m multigpu --port 8768 --data-dir .test-runs/browser-state --no-browser
+$env:MULTIGPU_TEST_URL = 'http://127.0.0.1:8768'
+node tests/browser-smoke.cjs
+```
+
+Playwright is a development-only dependency. Tests use mocked providers and must not launch cloud jobs. Optional CPU recipe tests use PyTorch/torchvision/Pillow and a separately prepared official model asset. Test artifacts remain under `.test-runs/`.
+
+The HTTP controller binds only to loopback. Mutations require a session token and origin checks. Keep the trusted local controller off public interfaces. See [the implementation plan](IMPLEMENTATION_PLAN.md) for delivery requirements and qualification gates.

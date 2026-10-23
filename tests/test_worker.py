@@ -3,13 +3,15 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 from multigpu.artifacts import (IntegrityError, export_artifacts, export_verified,
                                load_checkpoint, verify_export, write_checkpoint)
 from multigpu.benchmark import benchmark
-from multigpu.worker import TrainingContext, run
+from multigpu.worker import TrainingContext, WorkerLock, worker_active, run
+from multigpu.prediction import predict
 
 
 class WorkerTests(unittest.TestCase):
@@ -191,6 +193,60 @@ def train(ctx):
         self.assertFalse(measured["qualified"])
         self.assertFalse(measured["cross_provider_qualified"])
         self.assertNotIn("speedup", measured)
+
+    def test_v2_evaluation_prediction_and_exact_resume(self):
+        spec = {**self.spec, "recipe_version": 2}
+        baseline = self.root / "v2-baseline"
+        complete = self.train(spec, baseline)
+        self.assertEqual(complete["status"], "completed")
+        self.assertEqual(complete["evaluation"]["split"], "validation")
+        self.assertGreater(complete["evaluation"]["accuracy"], .8)
+        schema = json.loads((baseline / "export" / "input_schema.json").read_text())
+        self.assertEqual(schema["standardization"]["fitted_on"], "training_split_only")
+        prediction = predict(baseline / "export", {"features": dict(zip(schema["features"], [.8, -.8, .1, .2]))})
+        self.assertEqual(prediction["prediction"], 1)
+        interrupted = self.root / "v2-pause"
+        original = TrainingContext.report
+        def stop(ctx, *args, **kwargs):
+            original(ctx, *args, **kwargs)
+            if ctx.step == 17:
+                (ctx.output_dir / "STOP").touch()
+        with patch.object(TrainingContext, "report", stop):
+            self.assertEqual(self.train(spec, interrupted)["status"], "paused")
+        (interrupted / "STOP").unlink()
+        self.assertEqual(self.train({**spec, "resume_from": str(interrupted / "checkpoint.json")}, interrupted)["status"], "completed")
+        self.assertEqual(load_checkpoint(baseline / "checkpoint.json")["payload"], load_checkpoint(interrupted / "checkpoint.json")["payload"])
+        self.assertEqual(json.loads((baseline / "export" / "evaluation.json").read_text()),
+                         json.loads((interrupted / "export" / "evaluation.json").read_text()))
+
+    def test_independent_heartbeat_during_no_training_reports(self):
+        job = self.root / "heartbeat"
+        with contextlib.redirect_stdout(io.StringIO()):
+            ctx = TrainingContext({**self.spec, "heartbeat_interval_seconds": .005, "summary_interval_seconds": .01}, job)
+            ctx.start_telemetry()
+            time.sleep(.04)
+            ctx.close()
+        events = [json.loads(line) for line in (job / "events.jsonl").read_text().splitlines()]
+        self.assertTrue(any(item["type"] == "heartbeat" for item in events))
+        self.assertTrue(any(item["type"] == "summary" for item in events))
+        self.assertTrue(all(item["step"] == 0 and item["loss"] is None for item in events))
+        size = (job / "events.jsonl").stat().st_size
+        time.sleep(.02)
+        self.assertEqual(size, (job / "events.jsonl").stat().st_size)
+
+    def test_worker_lock_blocks_second_owner_and_stale_identity_is_not_active(self):
+        folder = self.root / "locked"
+        owner = WorkerLock(folder, {**self.spec, "attempt_id": "owner"})
+        try:
+            self.assertTrue(worker_active(folder))
+            self.assertEqual(self.train(self.spec, folder)["status"], "error")
+            self.assertFalse((folder / "events.jsonl").exists())
+            identity = json.loads((folder / "worker-identity.json").read_text())
+            self.assertEqual(identity["attempt_id"], "owner")
+        finally:
+            owner.close()
+        self.assertFalse(worker_active(folder))
+        self.assertFalse(json.loads((folder / "worker-identity.json").read_text())["active"])
 
 
 if __name__ == "__main__":

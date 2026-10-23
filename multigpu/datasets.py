@@ -12,6 +12,7 @@ from .artifacts import canonical_json, _check_path
 
 RESNET18_URL = "https://download.pytorch.org/models/resnet18-f37072fd.pth"
 RESNET18_ID = "torchvision/resnet18/IMAGENET1K_V1/f37072fd"
+RESNET18_SHA256 = "f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 
 
@@ -133,15 +134,15 @@ def load_tabular(spec: dict) -> dict:
                         values = _finite_row(row)
                     except ValueError:
                         raise ValueError(f"CSV row {line} requires finite numeric features and a 0/1 label") from None
+                if columns is not None and len(values) != len(columns):
+                    raise ValueError(f"CSV row {line} does not match the header")
                 if len(values) < 2 or not all(math.isfinite(value) for value in values) or values[label_index] not in (0.0, 1.0):
                     raise ValueError(f"CSV row {line} needs finite features and a binary 0/1 label")
                 if features and len(values) != len(features[0]) + 1:
                     raise ValueError(f"CSV row {line} has a different number of columns")
-                if columns is not None and len(values) != len(columns):
-                    raise ValueError(f"CSV row {line} does not match the header")
                 features.append(values[:label_index] + values[label_index + 1:])
                 labels.append(values[label_index])
-                if len(features) > 1_000_000 or (version == 2 and len(features) * (len(features[0]) * 40 + 96) > 512 * 1024 * 1024):
+                if len(features) > 1_000_000 or (version == 2 and len(features) * (len(features[0]) * 80 + 96) > 512 * 1024 * 1024):
                     raise ValueError("Dataset exceeds the in-memory classifier limit; use a custom streaming recipe")
         if not features:
             raise ValueError("Dataset contains no training rows")
@@ -153,10 +154,25 @@ def load_tabular(spec: dict) -> dict:
         features = [[rng.uniform(-1, 1) for _ in range(4)] for _ in range(512)]
         labels = [float(2 * row[0] - row[1] + 0.5 * row[2] - 0.2 * row[3] > 0) for row in features]
         columns, label_index = ["feature_1", "feature_2", "feature_3", "feature_4", "label"], 4
+    if version == 2 and (set(labels) != {0.0, 1.0} or min(labels.count(0.0), labels.count(1.0)) < 5):
+        raise ValueError("Binary classification needs at least 5 rows of each label (0 and 1) for training and validation")
     train, validation = stratified_split(labels, spec["seed"]) if version == 2 else (list(range(len(labels))), [])
     raw_hash = hashlib.sha256(canonical_json([features, labels])).hexdigest()
     schema = {"kind": "tabular_binary", "features": [name for i, name in enumerate(columns) if i != label_index],
               "label_column": columns[label_index], "label_index": label_index, "classes": [0, 1]}
+    if version == 2:
+        try:
+            means = [math.fsum(features[i][column] for i in train) / len(train) for column in range(len(features[0]))]
+            deviations = [math.sqrt(math.fsum((features[i][column] - means[column]) ** 2 for i in train) / len(train)) or 1.0
+                          for column in range(len(features[0]))]
+        except OverflowError:
+            raise ValueError("Feature magnitude is too large to standardize safely") from None
+        if not all(math.isfinite(value) for value in means + deviations):
+            raise ValueError("Feature magnitude is too large to standardize safely")
+        schema["standardization"] = {"mean": means, "std": deviations, "fitted_on": "training_split_only"}
+        features = [[(value - means[column]) / deviations[column] for column, value in enumerate(row)] for row in features]
+        if not all(math.isfinite(value) for row in features for value in row):
+            raise ValueError("Feature magnitude is too large to standardize safely")
     content_hash = raw_hash if version == 1 else hashlib.sha256(canonical_json({"values": raw_hash, "schema": schema})).hexdigest()
     warnings = ["Generated demonstration data; validation results do not establish quality on your task."] if path is None else []
     if version == 2 and set(labels) != {0.0, 1.0}:
@@ -167,7 +183,7 @@ def load_tabular(spec: dict) -> dict:
             "metadata": {"kind": "tabular_binary", "source": "csv" if path else "synthetic", "rows": len(features),
                          "feature_count": len(features[0]), "columns": columns, "label_column": columns[label_index],
                          "class_counts": counts, "train_rows": len(train), "validation_rows": len(validation),
-                         "sha256": content_hash, "estimated_memory_bytes": len(features) * (len(features[0]) * 40 + 96),
+                         "sha256": content_hash, "estimated_memory_bytes": len(features) * (len(features[0]) * (80 if version == 2 else 40) + 96),
                          "estimated_batch_bytes": spec["batch_size"] * (len(features[0]) + 1) * 4, "input_schema": schema}}
 
 
@@ -185,7 +201,7 @@ def weights_info(spec: dict) -> dict:
             result["error"] = "Prepare official ResNet18 weights before starting this recipe"
             return result
         digest = _file_hash(path)
-        if not digest.startswith("f37072fd") or (spec.get("weights_sha256") and spec["weights_sha256"] != digest):
+        if digest != RESNET18_SHA256 or (spec.get("weights_sha256") and spec["weights_sha256"] != digest):
             raise ValueError("Cached ResNet18 weights failed their SHA-256 identity check")
         result.update(ready=True, sha256=digest)
     except (OSError, ValueError) as exc:

@@ -117,13 +117,13 @@ class ServiceTests(unittest.TestCase):
 
     def test_remote_session_limit_continues_checkpoint_on_selected_local(self):
         self.service.store.put("connection", "kaggle", {"provider_id": "kaggle", "ready": True, "config": {"username": "test"}, "quota": {"remaining_hours": 1}})
-        def submit(pid, config, spec_path, job_dir):
+        def submit(pid, config, spec_path, job_dir, intent=None):
             spec = json.loads(spec_path.read_text(encoding="utf-8"))
             with contextlib.redirect_stdout(io.StringIO()):
                 paused = run({**spec, "runtime_seconds": 0}, job_dir)
             self.assertEqual(paused["status"], "paused")
             return {"provider": pid, "state": "completed"}
-        with patch("multigpu.connectors.submit", side_effect=submit), patch("multigpu.connectors.poll", return_value={"state": "completed"}), patch("multigpu.connectors.collect"):
+        with patch("multigpu.connectors.prepare", return_value={"provider":"kaggle","kernel":"test/fake"}), patch("multigpu.connectors.submit", side_effect=submit), patch("multigpu.connectors.poll", return_value={"state": "completed"}), patch("multigpu.connectors.collect"):
             job = self.service.create({"providers": ["kaggle", "local"], "steps": 20})
             done = self.wait_terminal(job["id"])
         self.assertEqual(done["status"], "completed", done)

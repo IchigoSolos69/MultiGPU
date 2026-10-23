@@ -72,7 +72,8 @@ class Service:
         import sqlite3
         backup = self.root / "state.before-v2.sqlite3"
         if not backup.exists():
-            with sqlite3.connect(backup) as target:
+            import contextlib
+            with contextlib.closing(sqlite3.connect(backup)) as target:
                 self.store.db.backup(target)
         for job in self.store.all("job"):
             job.setdefault("execution_mode", "guided" if job["spec"].get("guided") or next((p["integration"] != "automatic" for p in CATALOG if p["id"] == job["provider_id"]), False) else "automatic")
@@ -93,7 +94,8 @@ class Service:
             raise ValueError("Invalid training draft.")
         spec = {k: v for k, v in value.get("spec", {}).items() if k not in ("preview_digest", "id", "attempt_id")}
         spec.update(free_only=True, trust_script=False)
-        return self.store.put("draft", "local", {"schema_version": 1, "spec": spec, "wizard_step": max(0, min(3, int(value.get("wizard_step", 0))))})
+        extras = {key:value[key] for key in ("primary", "fallbacks", "dataset_mode", "dataset_report") if key in value}
+        return self.store.put("draft", "local", {**extras, "schema_version": 1, "spec": spec, "wizard_step": max(0, min(3, int(value.get("wizard_step", 0))))})
 
     def settings(self):
         return self.store.get("settings", "local", {"output_dir": str(self.root / "exports"), "summary_interval_seconds": 300})
@@ -114,7 +116,7 @@ class Service:
             connection = connections.get(p["id"], {"ready": p["id"] == "local", "detail": "Available on this computer." if p["id"] == "local" else "Not connected", "config": {}})
             providers.append({**p, "connection": connection})
         return {"providers": providers, "jobs": self.jobs(), "hardware": self.hardware, "settings": self.settings(),
-                "app": {"name": "MultiGPU", "version": "0.2.0"}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
+                "app": {"name": "MultiGPU", "version": "0.2.0", "workspace_dir":str(self.root)}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
 
     def probe(self, pid, config):
         if pid not in {p["id"] for p in CATALOG}:
@@ -154,7 +156,7 @@ class Service:
                 actions.append("cancel")
         if status in TERMINAL:
             actions.extend(["import", "bundle"] if job.get("execution_mode") == "guided" else [])
-            if job.get("checkpoint") and job.get("submission_status") != "unknown":
+            if (self.jobs_root / job["id"] / "checkpoint.json").exists() and job.get("submission_status") != "unknown" and (not job.get("handle") or job.get("remote_terminal")):
                 actions.append("resume")
             if (self.jobs_root / job["id"] / "checkpoint.previous.json").exists():
                 actions.append("recover")
@@ -216,6 +218,7 @@ class Service:
             if plan["preflight"]["errors"]:
                 raise ValueError("; ".join(plan["preflight"]["errors"]))
             spec = plan["spec"]
+            spec["fingerprint"] = plan["preflight"].get("fingerprint")
             first = next(p for p in CATALOG if p["id"] == spec["providers"][0])
             guided = bool(spec.get("guided")) or first["integration"] == "guided"
             if not guided and not plan["eligible"]:
@@ -283,6 +286,8 @@ class Service:
                 job["evaluation"] = event.get("metrics", event.get("evaluation", {}))
             if event.get("evaluation"):
                 job["evaluation"] = event["evaluation"]
+            if event.get("phase") and event.get("attempt_id") == job["spec"].get("attempt_id"):
+                job["phase"] = event["phase"]
             for key in ("step", "total_steps", "loss", "device", "elapsed_seconds"):
                 if event.get(key) is not None:
                     job[key] = event[key]
@@ -293,8 +298,13 @@ class Service:
                 if event.get("message") or event.get("error"):
                     job["message"] = event.get("message", event.get("error"))
         checkpoint = self.jobs_root / job["id"] / "checkpoint.json"
-        if checkpoint.exists() and not job.get("checkpoint"):
-            job["checkpoint"] = {"path": str(checkpoint), "step": job.get("step", 0)}
+        if checkpoint.exists():
+            from .artifacts import load_checkpoint, IntegrityError
+            try:
+                saved = load_checkpoint(checkpoint)
+                job["checkpoint"] = {"path": str(checkpoint), "step": saved["step"], "at": job.get("checkpoint", {}).get("at") if job.get("checkpoint") else now(), "location":"local", "verified":True}
+            except (IntegrityError, OSError):
+                job["checkpoint_error"] = "The latest local checkpoint needs recovery. Previous verified state may still be available."
         return job
 
     def _run(self, jid):
@@ -425,6 +435,9 @@ class Service:
 
     def reconcile(self, jid):
         job = self.job(jid)
+        thread = self.threads.get(jid)
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            return job
         if job["provider_id"] == "local":
             from .worker import worker_active
             busy = worker_active(self.jobs_root / jid)
@@ -485,6 +498,10 @@ class Service:
         load_checkpoint(path / "checkpoint.json")
         job["spec"]["resume_from"] = str(path / "checkpoint.json")
         job["spec"]["providers"] = original
+        job.setdefault("attempts", []).append({"provider_id":job["provider_id"], "attempt_id":job["spec"].get("attempt_id"), "handle":job.get("handle"), "status":job["status"], "checkpoint":job.get("checkpoint")})
+        for key in ("handle", "submission_intent", "remote_terminal", "stop_requested"):
+            job.pop(key, None)
+        job.update(submission_status="prepared", connection_status="connected")
         job["provider_id"] = plan["selected_provider"]
         job["attempted_providers"] = [*attempted, job["provider_id"]]
         job.update(status="queued", message="Continuing the saved training target on another selected resource.")
@@ -598,6 +615,21 @@ class Service:
         result = connectors.cancel(job["provider_id"], config, job["handle"], self.jobs_root / jid)
         job.update(status="pausing", stop_requested=True, message=result.get("detail", "Cancellation requested. Waiting for provider confirmation; uncommitted progress may be lost."))
         return self.save_job(job)
+
+    def clean_cache(self):
+        if any(j["status"] in ("queued", "running", "pausing") for j in self.jobs()):
+            raise ValueError("Pause training before cleaning downloaded caches.")
+        # Keep models and checkpoints; only application-owned disposable ZIP downloads are removed.
+        removed = 0
+        for folder in self.jobs_root.iterdir():
+            if not folder.is_dir() or folder.is_symlink():
+                continue
+            for name in ("model.zip", "notebook.zip"):
+                target = folder / name
+                if target.is_file() and not target.is_symlink() and target.resolve().is_relative_to(self.jobs_root.resolve()):
+                    removed += target.stat().st_size
+                    target.unlink()
+        return {"removed_bytes": removed, "message":"Disposable download archives removed. Models and recovery state were retained."}
 
     def archive(self, jid, archived=True):
         job = self.job(jid)

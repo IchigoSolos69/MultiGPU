@@ -12,7 +12,7 @@ import tempfile
 import urllib.request
 
 from .artifacts import atomic_bytes, canonical_json, directory
-from .datasets import RESNET18_URL, RESNET18_ID, weights_info
+from .datasets import RESNET18_URL, RESNET18_ID, RESNET18_SHA256, weights_info
 from .prediction import classification_metrics, inference_files, sigmoid, tabular_probability
 
 
@@ -34,7 +34,7 @@ def _torch(ctx):
 
 def _evaluate_tabular(model: dict, data: dict) -> dict:
     indices = data["validation_indices"] or list(range(len(data["labels"])))
-    probabilities = [tabular_probability(model, data["features"][i]) for i in indices]
+    probabilities = [tabular_probability(model, data["features"][i], standardize=False) for i in indices]
     result = classification_metrics([[1 - value, value] for value in probabilities], [int(data["labels"][i]) for i in indices], [0, 1])
     result["split"] = "validation" if data["validation_indices"] else "training_only_legacy"
     result["warning"] = "Held-out validation is a small estimate, not a guarantee on future data." if data["validation_indices"] else "Legacy recipe has no held-out validation; these are training-set metrics."
@@ -42,8 +42,11 @@ def _evaluate_tabular(model: dict, data: dict) -> dict:
 
 
 def _finish_tabular(ctx, model, data):
-    ctx.evaluation = _evaluate_tabular(model, data)
+    ctx.phase = "evaluating"
     schema = data["metadata"]["input_schema"]
+    if schema.get("standardization"):
+        model["standardization"] = schema["standardization"]
+    ctx.evaluation = _evaluate_tabular(model, data)
     ctx.export({"model.json": canonical_json(model), "evaluation.json": canonical_json(ctx.evaluation),
                 "input_schema.json": canonical_json(schema),
                 "training.json": canonical_json({"steps": ctx.step, "final_batch_loss": ctx.loss,
@@ -71,6 +74,7 @@ def train_starter(ctx, data):
                   "sampling": "seeded sampling with replacement", "feature_count": len(x[0])}
         if ctx.spec["recipe_version"] == 2:
             result["split"] = {"train_indices": train, "validation_indices": data["validation_indices"]}
+            result["standardization"] = data["metadata"]["input_schema"]["standardization"]
         return result
     ctx._state_factory = state
     ctx.checkpoint(state())
@@ -117,6 +121,7 @@ def train_pytorch(ctx, data):
                   "architecture": {"name": "binary-mlp", "features": len(x[0]), "hidden": 16}, "sampling": "seeded sampling with replacement"}
         if ctx.spec["recipe_version"] == 2:
             result["split"] = {"train_indices": train, "validation_indices": data["validation_indices"]}
+            result["standardization"] = data["metadata"]["input_schema"]["standardization"]
         return result
     ctx._state_factory = state
     ctx.checkpoint(state())
@@ -161,7 +166,7 @@ def prepare_image_weights(cache_dir: Path, allow_download=False) -> dict:
                 output.write(chunk)
             output.flush()
             os.fsync(output.fileno())
-        if not digest.hexdigest().startswith("f37072fd"):
+        if digest.hexdigest() != RESNET18_SHA256:
             raise ValueError("Official ResNet18 download failed its SHA-256 check")
         os.replace(temporary, target)
         return {"weights_path": str(target.absolute()), "weights_sha256": digest.hexdigest(), "weights_identity": RESNET18_ID}
@@ -246,6 +251,7 @@ def train_image(ctx, data):
         ctx.maybe_checkpoint()
     ctx.checkpoint(state())
     if ctx.step == ctx.spec["steps"]:
+        ctx.phase = "evaluating"
         probabilities, labels = [], []
         with torch.no_grad():
             for start in range(0, len(data["validation_indices"]), ctx.spec["batch_size"]):

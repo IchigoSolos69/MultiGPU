@@ -24,6 +24,7 @@ import zipfile
 
 from .catalog import get_provider
 
+_MAX_STAGE_BYTES = 512 * 1024 * 1024
 
 class ConnectorError(RuntimeError):
     """An actionable failure; remote execution must not be inferred from it."""
@@ -36,9 +37,12 @@ class ConnectorError(RuntimeError):
 def _provider_error(provider, exc, action):
     name = type(exc).__name__
     lowered = name.lower()
-    if any(word in lowered for word in ("auth", "permission", "credential")):
+    status = getattr(exc, "status_code", None)
+    if status in {401, 403} or any(word in lowered for word in ("auth", "permission", "credential")):
         return ConnectorError(f"{provider} authentication or permission check failed. Sign in with its native tools again.", code="auth")
-    if any(word in lowered for word in ("connection", "timeout", "service", "unavailable")):
+    if status == 404 or name in {"NotFoundError", "NotFound"}:
+        return ConnectorError(f"{provider} did not find the saved resource during {action}. Inspect its console before retrying.", code="not_found")
+    if status in {429, 500, 502, 503, 504} or any(word in lowered for word in ("connection", "timeout", "service", "unavailable")):
         return ConnectorError(f"{provider} is temporarily unreachable during {action}; the remote execution may still be running.", code="network", transient=True)
     return ConnectorError(f"{provider} {action} failed ({name}). Inspect its console; private provider error text was withheld.")
 
@@ -297,7 +301,7 @@ def _stage(spec_path, job_dir):
                 raise ConnectorError("Symbolic links are not accepted in staged datasets.")
             if item.is_file():
                 total_bytes += item.stat().st_size
-        if total_bytes > 512 * 1024 * 1024:
+        if total_bytes > _MAX_STAGE_BYTES:
             raise ConnectorError("Selected inputs exceed this adapter's 512 MiB staging limit. Reduce the dataset or use provider-native storage and a custom training setup; no inputs were uploaded.", code="staging_limit")
         assets = stage / "assets"
         assets.mkdir(exist_ok=True)
@@ -330,6 +334,9 @@ def _safe_relative(name):
     if (not normalized or relative.is_absolute() or ":" in normalized
             or any(p in {"", ".", ".."} for p in normalized.split("/"))
             or any(ord(c) < 32 for c in normalized)):
+        raise ConnectorError("Provider returned an unsafe artifact path.")
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    if any(part.endswith((".", " ")) or part.split(".")[0].upper() in reserved for part in relative.parts):
         raise ConnectorError("Provider returned an unsafe artifact path.")
     return relative
 
@@ -428,7 +435,10 @@ def prepare(provider_id, config, spec_path, job_dir):
     if saved.is_file():
         prior = json.loads(saved.read_text(encoding="utf-8"))
         if prior.get("spec_sha256") == digest:
-            return prior
+            prior_record = _record_path(prior, job_dir)
+            prior_status = json.loads(prior_record.read_text(encoding="utf-8")).get("submission_status") if prior_record.is_file() else None
+            if prior_status != "not_submitted":
+                return prior
     spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     attempt = uuid.uuid4().hex
     intent = dict(provider=provider_id, attempt_id=attempt, job_id=spec.get("id"),
@@ -445,7 +455,7 @@ def prepare(provider_id, config, spec_path, job_dir):
         _paid_policy(config, spec)
         intent.update(identity=_modal_identity(config), app_name="multigpu-" + attempt,
                       volume="multigpu-" + attempt, control="multigpu-control-" + attempt,
-                      environment=str(config.get("environment") or "main"))
+                      environment=str(config.get("environment") or "main"), requested_gpu=config.get("gpu"))
     elif provider_id == "lightning":
         _paid_policy(config, spec)
         _lightning_consent(config)
@@ -537,6 +547,9 @@ def submit(provider_id, config, spec_path, job_dir, intent=None):
         _json_write(record, {**intent, "submission_status": "confirmed", "handle": handle})
         return handle
     except Exception as exc:
+        if isinstance(exc, ConnectorError) and exc.code == "preflight_failed":
+            _json_write(record, {**intent, "submission_status": "not_submitted"})
+            raise
         _json_write(record, {**intent, "submission_status": "unknown"})
         if isinstance(exc, ConnectorError) and exc.code == "submission_unknown":
             raise
@@ -560,8 +573,8 @@ def _submit_modal(config, spec, stage, intent):
     app = modal.App(intent["app_name"])
     options = dict(image=image, volumes={"/output": volume}, serialized=True, include_source=False,
                    timeout=int(spec.get("runtime_seconds", 3600)) + 60)
-    if config.get("gpu"):
-        options["gpu"] = str(config["gpu"])
+    if intent.get("requested_gpu"):
+        options["gpu"] = str(intent["requested_gpu"])
 
     @app.function(**options)
     def train():
@@ -629,6 +642,7 @@ def _submit_lightning(config, stage, intent=None):
     remote = intent["remote_dir"]
     runner = stage / "embedded-run.py"
     runner.write_text(_embedded(stage), encoding="utf-8")
+    launch_attempted = False
     try:
         if "running" not in str(studio.status).lower():
             if config.get("start_studio") is not True:
@@ -656,12 +670,22 @@ def _submit_lightning(config, stage, intent=None):
                   f" value={{'pid':c.pid,'attempt_id':{intent['attempt_id']!r}}}\n"
                   " json.dump(value,f); f.flush(); os.fsync(f.fileno())\n"
                   "print(json.dumps(value))")
+        launch_attempted = True
         value = json.loads(studio.run("python3 -c " + shlex.quote(launch)).strip().splitlines()[-1])
         if value.get("attempt_id") != intent["attempt_id"] or not isinstance(value.get("pid"), int):
             raise ConnectorError("Lightning's durable launch record is incomplete. Reconnect or inspect the Studio before retrying.", code="submission_unknown", intent=intent)
         return dict(**intent, pid=value["pid"], state="running", studio_stopped=False,
                     actual_resource=dict(machine=_machine_name(studio.machine), status=str(studio.status)))
     except Exception as exc:
+        if not launch_attempted:
+            try:
+                _stop_studio(studio, intent)
+            except Exception:
+                intent.setdefault("cleanup_status", "failed")
+            detail = str(exc) if isinstance(exc, ConnectorError) else f"Provider setup failed ({type(exc).__name__})."
+            raise ConnectorError("No Lightning training process was submitted. " + detail +
+                                 (" The dedicated Studio was stopped." if intent["cleanup_status"] == "verified" else " Stop the dedicated Studio in its console to prevent continuing compute charges."),
+                                 code="preflight_failed", intent=intent) from None
         if isinstance(exc, ConnectorError):
             raise
         raise _provider_error("Lightning", exc, "submission") from None
@@ -675,6 +699,15 @@ def _read_local_state(output):
         except (OSError, ValueError):
             pass
     return dict(state="running", detail="Waiting for the worker's next durable state.")
+
+
+def _stop_studio(studio, handle):
+    studio.stop()
+    status = str(studio.status).lower()
+    if "stopped" not in status and "notcreated" not in status:
+        handle["cleanup_status"] = "pending"
+        raise ConnectorError("Lightning has not yet confirmed that the dedicated Studio stopped. Check its console; compute charges may continue.", code="cleanup_pending", transient=True)
+    handle.update(studio_stopped=True, cleanup_status="verified")
 
 
 def _ingest_logs(text, job_dir):
@@ -722,10 +755,23 @@ def _modal_snapshot(modal, handle, job_dir):
             if name == "checkpoint.json":
                 from .artifacts import load_checkpoint
                 try:
-                    load_checkpoint(temporary)
+                    checkpoint = load_checkpoint(temporary)
                 except (ValueError, OSError):
                     temporary.unlink(missing_ok=True)
                     continue  # Keep the last good local checkpoint while a remote snapshot is incomplete.
+                payload = checkpoint.get("payload", {})
+                if payload.get("weights_asset"):
+                    relative = _safe_relative(payload["weights_asset"])
+                    asset = Path(job_dir).joinpath(*relative.parts)
+                    expected_hash = payload.get("weights_sha256")
+                    if not isinstance(expected_hash, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_hash):
+                        raise ConnectorError("Remote checkpoint has no valid weights checksum.")
+                    if not asset.is_file() or hashlib.sha256(asset.read_bytes()).hexdigest() != expected_hash:
+                        from .artifacts import atomic_bytes
+                        content = b"".join(volume.read_file(relative.as_posix()))
+                        if hashlib.sha256(content).hexdigest() != expected_hash:
+                            raise ConnectorError("Remote checkpoint weights failed their checksum; the last good checkpoint was preserved.")
+                        atomic_bytes(asset, content)
             temporary.replace(target)
     return _read_local_state(job_dir)
 
@@ -860,7 +906,7 @@ def stop(provider_id, config, handle, job_dir):
                         detail="This legacy Modal run has no cooperative pause channel. Use explicit cancellation or the provider console; cancellation cannot guarantee a final checkpoint.")
         modal = _sdk("modal", "modal")
         try:
-            modal.Dict.from_name(handle["control"], environment_name=handle.get("environment", "main")).put("pause", True)
+            modal.Dict.from_name(handle["control"], create_if_missing=True, environment_name=handle.get("environment", "main")).put("pause", True)
         except Exception as exc:
             raise _provider_error("Modal", exc, "pause request") from None
         return dict(stopped=False, state="pausing", stop_mode="cooperative", detail="Modal accepted a durable pause request. The worker will save a checkpoint at its next safe boundary; a provisioning worker checks this request before training.")
@@ -931,6 +977,14 @@ def _publish_outputs(download, job_dir):
         checkpoint_state = load_checkpoint(checkpoint)
         if expected.get("id") and (checkpoint_state.get("job_id") != expected["id"] or checkpoint_state.get("recipe") != expected.get("recipe")):
             raise ConnectorError("Downloaded checkpoint belongs to a different training run.")
+        payload = checkpoint_state.get("payload", {})
+        if payload.get("weights_asset"):
+            relative = _safe_relative(payload["weights_asset"])
+            asset = source.joinpath(*relative.parts)
+            checksum = payload.get("weights_sha256")
+            if not asset.is_file() or hashlib.sha256(asset.read_bytes()).hexdigest() != checksum:
+                raise ConnectorError("Downloaded checkpoint is missing its verified pretrained weights asset.")
+            atomic_bytes(job_dir.joinpath(*relative.parts), asset.read_bytes())
     if (source / "export" / "manifest.json").is_file():
         manifest = verify_export(source / "export")
         if expected.get("id") and manifest.get("metadata", {}).get("job_id") != expected["id"]:
@@ -958,7 +1012,7 @@ def collect(provider_id, config, handle, job_dir):
         output = Path(temporary)
         if provider_id == "kaggle":
             _kaggle_identity({**config, "username": handle["kernel"].split("/")[0]})
-            pattern = r"^(?:output/)?(?:checkpoint(?:\.previous)?\.json|events\.jsonl|connector-state\.json|export/(?!.*\.\.)[A-Za-z0-9_./ -]+)$"
+            pattern = r"^(?:output/)?(?:checkpoint(?:\.previous)?\.json|events\.jsonl|connector-state\.json|assets/base_weights\.pth|export/(?!.*\.\.)[A-Za-z0-9_./ -]+)$"
             _cli("kaggle", ["kernels", "output", handle["kernel"], "-p", str(output), "--force", "--file-pattern", pattern], timeout=300)
         elif provider_id == "lightning":
             studio = _studio(config)
@@ -974,9 +1028,9 @@ def collect(provider_id, config, handle, job_dir):
             finally:
                 if handle.get("dedicated_studio") is True and handle.get("stop_studio_after_run") is True and not handle.get("studio_stopped"):
                     try:
-                        studio.stop()
-                        handle["studio_stopped"] = True
-                        handle["cleanup_status"] = "verified"
+                        _stop_studio(studio, handle)
+                    except ConnectorError:
+                        raise
                     except Exception as exc:
                         handle["cleanup_status"] = "failed"
                         raise ConnectorError(f"Dedicated Lightning Studio could not be stopped ({type(exc).__name__}). Stop it in the provider console to prevent further compute charges; retrieve persistent artifacts there.") from None
