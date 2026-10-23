@@ -2,7 +2,7 @@
   #error Inno Setup 6.7.3 is required for this pinned build.
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 #ifndef PayloadDir
   #error PayloadDir must point to an allowlisted prepared payload.

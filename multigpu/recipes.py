@@ -27,7 +27,16 @@ def _torch(ctx):
         raise RuntimeError("PyTorch is not installed. Prepare the selected environment or use the CPU starter.") from exc
     if ctx.spec["device"] == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but PyTorch cannot access a CUDA GPU")
-    ctx.device = "cuda" if ctx.spec["device"] != "cpu" and torch.cuda.is_available() else "cpu"
+    use_cuda = ctx.spec["device"] != "cpu" and torch.cuda.is_available()
+    ctx.gpu_index = None
+    if use_cuda:
+        index = ctx.spec.get("gpu_index", 0) if ctx.spec.get("execution_provider", "local") == "local" else 0
+        if type(index) is not int or not 0 <= index < torch.cuda.device_count():
+            raise RuntimeError("The selected GPU index is unavailable in this training runtime")
+        torch.cuda.set_device(index)
+        ctx.gpu_index, ctx.device = index, f"cuda:{index}"
+    else:
+        ctx.device = "cpu"
     torch.manual_seed(ctx.spec["seed"])
     return torch
 
@@ -112,12 +121,12 @@ def train_pytorch(ctx, data):
         optimizer.load_state_dict(saved)
         rng.setstate(tuples(ctx.resume_state["rng_state"]))
         torch.set_rng_state(torch.tensor(ctx.resume_state["torch_rng"], dtype=torch.uint8))
-        if ctx.device == "cuda" and ctx.resume_state.get("cuda_rng"):
-            torch.cuda.set_rng_state(torch.tensor(ctx.resume_state["cuda_rng"], dtype=torch.uint8))
+        if ctx.gpu_index is not None and ctx.resume_state.get("cuda_rng"):
+            torch.cuda.set_rng_state(torch.tensor(ctx.resume_state["cuda_rng"], dtype=torch.uint8), device=ctx.device)
     def state():
         result = {"model": {key: value.detach().cpu().tolist() for key, value in model.state_dict().items()},
                   "optimizer": optimizer.state_dict(), "rng_state": rng.getstate(), "torch_rng": torch.get_rng_state().tolist(),
-                  "cuda_rng": torch.cuda.get_rng_state().tolist() if ctx.device == "cuda" else [],
+                  "cuda_rng": torch.cuda.get_rng_state(device=ctx.device).tolist() if ctx.gpu_index is not None else [],
                   "architecture": {"name": "binary-mlp", "features": len(x[0]), "hidden": 16}, "sampling": "seeded sampling with replacement"}
         if ctx.spec["recipe_version"] == 2:
             result["split"] = {"train_indices": train, "validation_indices": data["validation_indices"]}
@@ -141,10 +150,15 @@ def train_pytorch(ctx, data):
         _finish_tabular(ctx, {"format": "multigpu-pytorch-mlp-v1", **state()}, data)
 
 
-def prepare_image_weights(cache_dir: Path, allow_download=False) -> dict:
+def prepare_image_weights(cache_dir: Path, allow_download=False, cancelled=None) -> dict:
+    def check_cancelled():
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Model preparation was cancelled")
+    check_cancelled()
     cache = directory(cache_dir)
     target = cache / "resnet18-f37072fd.pth"
     found = weights_info({"weights_path": str(target)})
+    check_cancelled()
     if found["ready"]:
         return {"weights_path": found["path"], "weights_sha256": found["sha256"], "weights_identity": RESNET18_ID}
     if not allow_download:
@@ -157,8 +171,12 @@ def prepare_image_weights(cache_dir: Path, allow_download=False) -> dict:
     descriptor, temporary = tempfile.mkstemp(prefix=".resnet18-", suffix=".download", dir=cache)
     try:
         digest, size = hashlib.sha256(), 0
-        with os.fdopen(descriptor, "wb") as output, urllib.request.urlopen(RESNET18_URL, timeout=60) as response:
-            while chunk := response.read(1024 * 1024):
+        with os.fdopen(descriptor, "wb") as output, urllib.request.urlopen(RESNET18_URL, timeout=10) as response:
+            while True:
+                check_cancelled()
+                chunk = response.read(256 * 1024)
+                if not chunk:
+                    break
                 size += len(chunk)
                 if size > 60 * 1024 * 1024:
                     raise ValueError("Official model download exceeded its expected size")
@@ -166,8 +184,10 @@ def prepare_image_weights(cache_dir: Path, allow_download=False) -> dict:
                 output.write(chunk)
             output.flush()
             os.fsync(output.fileno())
+        check_cancelled()
         if digest.hexdigest() != RESNET18_SHA256:
             raise ValueError("Official ResNet18 download failed its SHA-256 check")
+        check_cancelled()
         os.replace(temporary, target)
         return {"weights_path": str(target.absolute()), "weights_sha256": digest.hexdigest(), "weights_identity": RESNET18_ID}
     finally:
@@ -209,8 +229,8 @@ def train_image(ctx, data):
         rng.setstate(tuples(saved["rng_state"]))
         epoch, cursor, order = saved["epoch"], saved["cursor"], saved["order"]
         torch.set_rng_state(torch.tensor(saved["torch_rng"], dtype=torch.uint8))
-        if ctx.device == "cuda" and saved.get("cuda_rng"):
-            torch.cuda.set_rng_state(torch.tensor(saved["cuda_rng"], dtype=torch.uint8))
+        if ctx.gpu_index is not None and saved.get("cuda_rng"):
+            torch.cuda.set_rng_state(torch.tensor(saved["cuda_rng"], dtype=torch.uint8), device=ctx.device)
     transform = ResNet18_Weights.IMAGENET1K_V1.transforms()
     root = Path(ctx.spec["dataset_path"])
     def image_tensor(index):
@@ -226,7 +246,7 @@ def train_image(ctx, data):
                                   for name, value in values.items()} for key, values in opt["state"].items()}
         return {"head": {key: value.detach().cpu().tolist() for key, value in model.fc.state_dict().items()},
                 "optimizer": opt, "rng_state": rng.getstate(), "torch_rng": torch.get_rng_state().tolist(),
-                "cuda_rng": torch.cuda.get_rng_state().tolist() if ctx.device == "cuda" else [],
+                "cuda_rng": torch.cuda.get_rng_state(device=ctx.device).tolist() if ctx.gpu_index is not None else [],
                 "epoch": epoch, "cursor": cursor, "order": order, "weights_sha256": digest,
                 "weights_asset": "assets/base_weights.pth", "dataset_manifest_sha256": data["content_hash"],
                 "split": {"train_indices": data["train_indices"], "validation_indices": data["validation_indices"]}}

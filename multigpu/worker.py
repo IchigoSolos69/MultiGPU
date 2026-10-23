@@ -83,6 +83,7 @@ class TrainingContext:
         self.spec = prepare_spec(spec)
         self.output_dir = directory(output_dir)
         self.device = "cpu" if self.spec["recipe"] == "starter" else self.spec["device"]
+        self.gpu_index = None
         self.step = resumed.get("step", 0) if resumed else 0
         self.loss = resumed.get("loss") if resumed else None
         self.resume_state = resumed.get("payload") if resumed else None
@@ -109,7 +110,7 @@ class TrainingContext:
             event = {"type": kind, "job_id": self.spec.get("id"), "attempt_id": self.spec.get("attempt_id"),
                      "timestamp": datetime.now(timezone.utc).isoformat(), "step": self.step,
                      "total_steps": self.spec["steps"], "loss": self.loss, "phase": self.phase,
-                     "elapsed_seconds": round(self.elapsed_seconds, 6), "device": self.device, **extra}
+                     "elapsed_seconds": round(self.elapsed_seconds, 6), "device": self.device, "gpu_index": self.gpu_index, **extra}
             line = canonical_json(event).decode("utf-8")
             path = self.output_dir / "events.jsonl"
             _check_path(path)
@@ -132,7 +133,7 @@ class TrainingContext:
                 self.emit("summary", checkpoint_step=self._checkpoint_step,
                           checkpoint_age_seconds=round(now - self._last_checkpoint, 3) if self._checkpoint_step is not None else None,
                           remaining_session_seconds=round(max(0, self.spec["runtime_seconds"] - (now - self._started)), 3),
-                          active_gpu_count=None if self.spec["recipe"] == "custom" else int(self.device == "cuda"),
+                          active_gpu_count=None if self.spec["recipe"] == "custom" else int(self.gpu_index is not None),
                           allowance_confidence=allowance.get("confidence", "not_metered" if allowance.get("source") == "local" else "unknown"),
                           required_action="Waiting for a checkpoint and stop acknowledgment" if requested else
                                           "Review worker logs: no training step was reported in five minutes" if stalled else None)
@@ -234,6 +235,10 @@ def run(spec: dict, output_dir: Path) -> dict:
         elif validated["recipe"] == "image":
             recipes.train_image(ctx, data)
         else:
+            if validated["device"] == "cuda":
+                # Trusted scripts can use ctx.device directly. Resolve an
+                # explicit CUDA selection before their imports/allocations.
+                recipes._torch(ctx)
             path = Path(validated["script_path"])
             sys.path.insert(0, str(path.absolute().parent))
             try:

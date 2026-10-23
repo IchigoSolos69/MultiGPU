@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
 from .service import Service
+from .connectors import ConnectorError
 
 
 def make_server(service, port=8765):
@@ -20,7 +21,7 @@ def make_server(service, port=8765):
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "MultiGPU/0.3"
+        server_version = "MultiGPU/0.4"
 
         def log_message(self, format, *args):
             pass
@@ -58,10 +59,14 @@ def make_server(service, port=8765):
                 parts = url.path.strip("/").split("/")
                 if url.path == "/api/bootstrap":
                     return self.send(200, service.bootstrap(), extra={"X-MultiGPU-Token": token})
+                if url.path == "/api/environment/tasks":
+                    return self.send(200, {"tasks": environment.recent()})
                 if url.path == "/api/hardware":
                     return self.send(200, service.hardware)
                 if url.path == "/api/draft":
                     return self.send(200, {"draft": service.draft()})
+                if url.path == "/api/diagnostics/logs":
+                    return self.send(200, service.diagnostic_logs())
                 if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "setup":
                     return self.send(200, service.provider_setup(parts[2]))
                 if parts[:3] == ["api", "environment", "tasks"] and len(parts) == 4:
@@ -126,6 +131,11 @@ def make_server(service, port=8765):
                     return self.send(200, service.hardware)
                 if parts == ["api", "environment", "setup"]:
                     return self.send(202, environment.start(raw.get("profile")))
+                if len(parts) == 5 and parts[:3] == ["api", "environment", "tasks"] and parts[4] == "cancel":
+                    return self.send(200, environment.cancel(parts[3]))
+                if parts == ["api", "desktop", "provider-signin"]:
+                    from .desktop import provider_signin
+                    return self.send(202, provider_signin(raw.get("provider_id")))
                 if parts == ["api", "desktop", "select-path"]:
                     from .desktop import select_path
                     return self.send(200, select_path(raw.get("kind", "file"), raw.get("purpose", "dataset")))
@@ -146,6 +156,10 @@ def make_server(service, port=8765):
                 if len(parts) == 4 and parts[:2] == ["api", "jobs"]:
                     if parts[3] == "setup":
                         return self.send(200, service.job_setup(parts[2], raw))
+                    if parts[3] == "resolve-submission":
+                        return self.send(200, service.resolve_submission(parts[2], raw))
+                    if parts[3] == "relocate-inputs":
+                        return self.send(200, service.relocate_inputs(parts[2], raw))
                     if parts[3] == "import":
                         return self.send(200, service.import_output(parts[2], raw))
                     if parts[3] == "resume":
@@ -172,8 +186,12 @@ def make_server(service, port=8765):
                 self.error(exc)
 
         def error(self, exc):
+            service._log_provider_error(None, exc, "API request")
             status = 403 if isinstance(exc, PermissionError) else 404 if isinstance(exc, KeyError) else 400 if isinstance(exc, (ValueError, TypeError)) else 500
-            self.send(status, {"error": str(exc)})
+            detail = {"error": str(exc)}
+            if isinstance(exc, ConnectorError):
+                detail.update(error_code=exc.code, transient=exc.transient)
+            self.send(status, detail)
 
     return ThreadingHTTPServer(("127.0.0.1", port), Handler)
 

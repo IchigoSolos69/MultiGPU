@@ -1,5 +1,20 @@
 # MultiGPU user journey implementation plan
 
+## Version 0.4: complete-journey reliability
+
+Implemented after the end-to-end review, for beginners and experienced trainers equally:
+
+- One reviewed resource/mode/device resolution controls creation; invalid preflight blocks every preparation route, including alternate notebook downloads.
+- Submission evidence separates proven not-started failures from uncertain launches. Existing executions can be attached with account/attempt proof; explicit console confirmations retain their user-confirmed provenance. Unstopped Lightning Studios remain reserved.
+- Account verification, allowance, job eligibility and live qualification remain distinct. Known paid GPU and metered notebook modes cannot masquerade as free-only execution.
+- Built-in recipes and custom scripts have visible entry points, optional custom input files/folders, exact review and immediately invalidated input/trust checks.
+- Native sign-in uses fixed provider commands; persistent setup tasks support cancellation. Windows Job Objects own installer children before they execute. Interrupted setup requires rechecking/repair.
+- Initial reconnect finishes initialization once. Focused fields, log selections and recovery snapshots survive polling while status/actions/export advance. Assisted sessions explain their import-based observations.
+- Completed model delivery uses frozen input metadata; resume accepts content-verified relocated inputs. Checkpoint import validates, hashes and commits the same captured bytes. Prediction is capability-gated and names saved features.
+- Attention/history/actions are consistent; logs retain redacted delivery failures; native tray notifications, second-launch restoration, crash recovery, version checks and retained-environment repair are implemented.
+
+Use existing local HTTP/SQLite contracts and additive metadata. User data, checkpoints, target, paid opt-in and remote recovery retention stay protected. Qualification remains a release gate: local/fixture tests do not certify live provider entitlements, billing or CUDA. Current evidence is recorded in VALIDATION.md.
+
 Approved direction: Windows first, with both tabular and image classification,
 guided setup, reliable recovery and verified local model delivery.
 

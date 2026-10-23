@@ -59,12 +59,17 @@ const path=require('node:path');
   assert.notEqual(await page.getByLabel('Kaggle username',{exact:true}).inputValue(),'unsaved-local-ui-test');
   await page.locator('[data-context="provider"][data-step="signin"]').click();await page.locator('.command').first().waitFor();
   await page.keyboard.press('Escape');await page.locator('.provider-title').click();await page.locator('[data-context="provider"][data-step="signin"][aria-current="step"]').waitFor();
+  await page.setViewportSize({width:768,height:1024});await page.waitForTimeout(200);
+  await page.screenshot({path:path.join(out,'provider-guide-tablet.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Phone provider guide overflowed');
   await page.screenshot({path:path.join(out,'provider-guide-mobile.png'),fullPage:true});
   await page.keyboard.press('Escape');await page.goto(base+'/#job/'+job.id);
   await page.locator('#job-setup-guide .setup-navigation').waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Phone job guide overflowed');
-  await page.screenshot({path:path.join(out,'guided-job-mobile.png'),fullPage:true});
+  await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));await page.screenshot({path:path.join(out,'guided-job-mobile.png'),fullPage:true});
+  await page.setViewportSize({width:768,height:1024});await page.waitForTimeout(200);await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+  await page.screenshot({path:path.join(out,'guided-job-tablet.png'),fullPage:true});
+  await fs.writeFile(path.join(out,'guide-proof.json'),JSON.stringify({job_id:job.id,url:base+'/#job/'+job.id},null,2));
   assert.deepEqual(errors,[]);console.log('In-app guide acceptance passed: explicit IPYNB download, saved Next/Back navigation, server-validated acknowledgements, no false readiness, no auto ZIP, manual handoff, accessible existing-output import, focus persistence, provider config protection, desktop/mobile.');
  }catch(e){await page.screenshot({path:path.join(out,'guide-failure.png'),fullPage:true});throw e;}
  finally{await browser.close();}

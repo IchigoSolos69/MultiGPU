@@ -26,7 +26,7 @@ def hardware_info():
     result = {"python": sys.executable, "torch_available": importlib.util.find_spec("torch") is not None,
               "torchvision_available": importlib.util.find_spec("torchvision") is not None,
               "pillow_available": importlib.util.find_spec("PIL") is not None,
-              "cuda_available": False, "gpus": [], "cpu_count": os.cpu_count()}
+              "cuda_available": False, "gpus": [], "cpu_count": os.cpu_count(), "checked_at": now()}
     try:
         probe = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=8)
         if probe.returncode == 0:
@@ -37,11 +37,18 @@ def hardware_info():
         pass
     if result["torch_available"]:
         try:
-            p = subprocess.run([sys.executable, "-c", "import json,torch;print(json.dumps({'cuda_available':torch.cuda.is_available(),'torch_version':torch.__version__}))"], capture_output=True, text=True, timeout=30)
+            code = "import json,torch; available=torch.cuda.is_available();print(json.dumps({'cuda_available':available,'torch_version':torch.__version__,'visible_gpus':[{'name':torch.cuda.get_device_name(i),'memory_mb':torch.cuda.get_device_properties(i).total_memory//1048576,'index':i} for i in range(torch.cuda.device_count())] if available else []}))"
+            p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
             if p.returncode == 0:
                 result.update(json.loads(p.stdout.strip().splitlines()[-1]))
+                if result["cuda_available"]:
+                    result["gpus"] = result.pop("visible_gpus", result["gpus"])
+                else:
+                    result.pop("visible_gpus", None)
+            else:
+                result.update(torch_available=False, environment_error="PyTorch could not be imported. Repair the app environment before using a PyTorch recipe.")
         except (OSError, subprocess.SubprocessError, ValueError):
-            pass
+            result.update(torch_available=False, environment_error="PyTorch validation could not finish. Recheck or repair the app environment.")
     return result
 
 
@@ -59,6 +66,8 @@ class Service:
         self.hardware = hardware_info()
         self._migrate()
         for job in self.store.all("job"):
+            if self._manually_resolved(job) or job.get("submission_status") == "not_started":
+                continue
             if job["status"] in ("queued", "running", "pausing", "exporting") or (job["status"] == "interrupted" and (job.get("handle") or job.get("submission_intent"))):
                 job.update(status="interrupted", connection_status="unknown", message="Reconnecting to the previous execution before another attempt can start.")
                 self.save_job(job)
@@ -107,12 +116,16 @@ class Service:
         return self.store.put("draft", "local", {**extras, "schema_version": 1, "spec": spec, "wizard_step": max(0, min(3, int(value.get("wizard_step", 0))))})
 
     def settings(self):
-        return self.store.get("settings", "local", {"output_dir": str(self.root / "exports"), "summary_interval_seconds": 300})
+        return {"desktop_notifications": False, **self.store.get("settings", "local", {"output_dir": str(self.root / "exports"), "summary_interval_seconds": 300})}
 
     def save_settings(self, raw):
         settings = self.settings()
         if "output_dir" in raw:
             settings["output_dir"] = str(Path(raw["output_dir"]).expanduser().resolve())
+        if "desktop_notifications" in raw:
+            if not isinstance(raw["desktop_notifications"], bool):
+                raise ValueError("Desktop notifications must be true or false.")
+            settings["desktop_notifications"] = raw["desktop_notifications"]
         return self.store.put("settings", "local", settings)
 
     def connections(self):
@@ -185,9 +198,17 @@ class Service:
         providers = []
         for p in CATALOG:
             connection = connections.get(p["id"], {"ready": p["id"] == "local", "detail": "Available on this computer." if p["id"] == "local" else "Not connected", "config": {}})
+            if p["id"] == "local":
+                connection = {**connection, "ready": True, "checked_at": self.hardware.get("checked_at"),
+                              "actual_resource": {"machine": str(self.hardware.get("cpu_count") or "Available") + " CPU threads",
+                                                  "status": "CUDA available" if self.hardware.get("cuda_available") else "CPU available",
+                                                  "gpu_names": [gpu["name"] for gpu in self.hardware.get("gpus", [])] if self.hardware.get("cuda_available") else []}}
             providers.append({**p, "connection": connection})
+        from . import __version__
+        environment = getattr(self, "environment", None)
         return {"providers": providers, "jobs": self.jobs(), "hardware": self.hardware, "settings": self.settings(),
-                "app": {"name": "MultiGPU", "version": "0.3.0", "workspace_dir":str(self.root)}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
+                "environment_tasks": environment.recent() if environment else [],
+                "app": {"name": "MultiGPU", "version": __version__, "workspace_dir":str(self.root), "runtime_base_prefix": sys.base_prefix}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
 
     def probe(self, pid, config):
         if pid not in {p["id"] for p in CATALOG}:
@@ -198,12 +219,79 @@ class Service:
         if unknown:
             raise ValueError("Use the provider's native login. The app does not accept or store passwords or API tokens. Unknown settings: " + ", ".join(sorted(unknown)))
         result = connectors.probe(pid, config)
+        if result.get("error_code"):
+            self._log_provider_error(None, connectors.ConnectorError(result["detail"], code=result["error_code"], diagnostic=result.get("diagnostic")), "connection check", pid)
         result.update(provider_id=pid, config=config, checked_at=now())
         self.store.put("connection", pid, result)
         return result
 
+    def _log_provider_error(self, jid, exc, stage, provider=None):
+        event = {"timestamp": now(), "stage": stage, "provider": provider,
+                 "job_id": jid, "error_code": getattr(exc, "code", "provider"),
+                 "message": connectors.redact_provider_output(str(exc)), "exception_type": type(exc).__name__}
+        if isinstance(exc, connectors.ConnectorError) and exc.diagnostic:
+            event["diagnostic"] = connectors.redact_diagnostic(exc.diagnostic)
+        if getattr(exc, "submission_evidence", None):
+            event["submission_evidence"] = connectors.redact_diagnostic(exc.submission_evidence)
+        line = json.dumps(event, ensure_ascii=False) + "\n"
+        with self.lock:
+            try:
+                folder = self.root / "logs"
+                folder.mkdir(exist_ok=True)
+                target = folder / "app.log"
+                if target.exists() and target.stat().st_size > 2 * 1024 * 1024:
+                    target.replace(folder / "app.previous.log")
+                with target.open("a", encoding="utf-8") as log:
+                    log.write(line)
+                if jid:
+                    with (self.jobs_root / jid / "worker.log").open("a", encoding="utf-8") as log:
+                        log.write(line)
+            except OSError:
+                pass  # Diagnostics must not replace the original training failure.
+
+    def diagnostic_logs(self):
+        path = self.root / "logs" / "app.log"
+        if not path.is_file():
+            return {"path": str(path), "logs": "No provider errors have been recorded yet."}
+        with path.open("rb") as log:
+            log.seek(max(0, path.stat().st_size - 65536))
+            content = log.read().decode("utf-8", errors="replace")
+        return {"path": str(path), "logs": content}
+
     def jobs(self):
-        return sorted(self.store.all("job"), key=lambda j: j["created_at"], reverse=True)
+        return [self._describe_job(j) for j in sorted(self.store.all("job"), key=lambda j: j["created_at"], reverse=True)]
+
+    @staticmethod
+    def _manually_resolved(job):
+        resolution = job.get("submission_resolution", {})
+        attempt = job.get("spec", {}).get("attempt_id")
+        return bool(attempt) and resolution.get("source") == "user_confirmed" and resolution.get("outcome") in ("stopped", "absent") and resolution.get("attempt_id") == attempt
+
+    @staticmethod
+    def _recovery_token(job):
+        snapshot = {key: job.get(key) for key in ("id", "provider_id", "submission_status", "submission_intent", "handle", "submission_resolution")}
+        snapshot["attempt_id"] = job.get("spec", {}).get("attempt_id")
+        return hashlib.sha256(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+    def _describe_job(self, job):
+        reasons = []
+        unresolved = job.get("submission_status") == "unknown" and not self._manually_resolved(job)
+        if unresolved:
+            reasons.append("Provider launch needs resolution")
+        if job["status"] in ("error", "interrupted"):
+            reasons.append("Training needs recovery")
+        for key, label in (("export_status", "Local export"), ("collection_status", "Result collection"), ("cleanup_status", "Provider cleanup")):
+            if job.get(key) == "failed":
+                reasons.append(label + " needs attention")
+        job["attention_required"] = bool(reasons)
+        job["attention_reasons"] = reasons
+        job["recovery_token"] = self._recovery_token(job)
+        if job.get("export_path") and not job.get("inference"):
+            from .prediction import inference_capability
+            job["inference"] = inference_capability(Path(job["export_path"]))
+        job.setdefault("inference", {"supported": False, "reason": "Verify and export the model before prediction.", "features": [], "classes": []})
+        job["allowed_actions"] = self._allowed_actions(job)
+        return job
 
     def job(self, jid, include_events=False):
         if not jid or any(c not in "0123456789abcdef" for c in jid):
@@ -215,33 +303,43 @@ class Service:
             events = self.read_events(jid)
             job["events"] = events[-500:]
             job["metrics"] = [e for e in events if e.get("type") == "metric"][-2000:]
-        job["allowed_actions"] = self._allowed_actions(job)
-        return job
+        return self._describe_job(job)
 
     def _allowed_actions(self, job):
-        actions = ["archive"]
+        actions = []
         status = job["status"]
+        resolved = self._manually_resolved(job)
+        cleanup_blocked = job.get("provider_id") == "lightning" and job.get("cleanup_status") in ("pending", "failed") and not resolved
+        stopped = status in TERMINAL and not cleanup_blocked and (job.get("submission_status") != "unknown" or resolved) and (not job.get("handle") or job.get("remote_terminal") or resolved)
+        thread = self.threads.get(job["id"])
+        idle = job["id"] not in self.processes and not (thread and thread.is_alive())
+        if stopped and idle:
+            actions.extend(["archive", "relocate-inputs"])
+        if (job.get("submission_status") == "unknown" or cleanup_blocked) and not resolved and idle:
+            actions.append("resolve-submission")
         if status in ("queued", "running", "pausing"):
             actions.append("pause" if job["provider_id"] != "kaggle" else "external-stop")
             if job["provider_id"] == "modal":
                 actions.append("cancel")
         if status in TERMINAL:
-            if job.get("execution_mode") == "guided":
+            if job.get("execution_mode") == "guided" and stopped and idle:
                 actions.append("import")
                 if job.get("step", 0) < job["spec"]["steps"]:
                     actions.append("bundle")
             checkpoint_step = (job.get("checkpoint") or {}).get("step", job.get("step", 0))
             resumable = (self.jobs_root / job["id"] / "checkpoint.json").exists() or self._pristine_pause(job)
-            if status in ("paused", "interrupted", "error") and checkpoint_step < job.get("total_steps", job["spec"]["steps"]) and resumable and job.get("submission_status") != "unknown" and (not job.get("handle") or job.get("remote_terminal")):
+            if status in ("paused", "interrupted", "error") and checkpoint_step < job.get("total_steps", job["spec"]["steps"]) and resumable and stopped and idle:
                 actions.append("resume")
-            if (self.jobs_root / job["id"] / "checkpoint.previous.json").exists():
+            if stopped and idle and (self.jobs_root / job["id"] / "checkpoint.previous.json").exists():
                 actions.append("recover")
         if job.get("handle") or job.get("submission_intent"):
             actions.append("reconcile")
         if status == "completed" or job.get("export_path"):
             actions.append("export")
         if job.get("export_path"):
-            actions.extend(["open-export", "predict"])
+            actions.append("open-export")
+            if job.get("inference", {}).get("supported"):
+                actions.append("predict")
         return actions
 
     def save_job(self, job):
@@ -254,8 +352,13 @@ class Service:
         if spec["recipe"] == "image" and not spec.get("weights_path"):
             spec.update(self.store.get("environment", "image_weights", {}))
         report = inspect_dataset(spec)
+        report["actions"] = []
+        if report["errors"]:
+            report["actions"].append({"type": "wizard", "step": 0, "label": "Review training inputs"})
         if spec["recipe"] == "image" and not report.get("errors") and not report.get("dataset", {}).get("weights", {}).get("ready"):
             report["errors"].append("Prepare the image environment and verified pretrained weights before launching or preparing a notebook.")
+            report["actions"].append({"type": "environment", "profile": "image", "label": "Prepare image dependencies"})
+        input_errors = len(report["errors"])
         try:
             destination = Path(spec["output_dir"])
             if destination.exists() and not destination.is_dir():
@@ -279,6 +382,8 @@ class Service:
                 report["errors"].append("The export drive has insufficient space for a verified export and its recovery copy. Choose another folder.")
         except OSError as exc:
             report["errors"].append("Cannot access the export folder: " + str(exc))
+        if len(report["errors"]) > input_errors:
+            report["actions"].append({"type": "wizard", "step": 2, "label": "Choose another export folder"})
         if spec["recipe"] == "image" and report.get("dataset", {}).get("total_steps"):
             spec["steps"] = report["dataset"]["total_steps"]
         result = preview(spec, CATALOG, self.connections(), self.hardware, self.jobs())
@@ -295,14 +400,17 @@ class Service:
                 report["warnings"].append("Batch memory is an estimate; model, optimizer and runtime memory can still exceed GPU capacity.")
         if report["errors"]:
             result["eligible"] = False
+            result["preparation_eligible"] = False
             result["selected_provider"] = None
+            result["execution_mode"] = None
+            result["allowed_actions"] = []
             for decision in result["decisions"]:
-                decision.update(eligible=False, reason="; ".join(report["errors"]))
+                decision.update(eligible=False, preparation_eligible=False, reason="; ".join(report["errors"]))
         result["preflight"] = report
         result["warnings"].extend(report.get("warnings", []))
         result["spec"] = spec
         identities = {pid: self.connections().get(pid, {}).get("config", {}) for pid in spec["providers"]}
-        digest = {"spec": spec, "fingerprint": report.get("fingerprint"), "selected_provider": result["selected_provider"], "accounts": identities}
+        digest = {"spec": spec, "fingerprint": report.get("fingerprint"), "selected_provider": result["selected_provider"], "execution_mode": result.get("execution_mode"), "resolved_device": result.get("resolved_device"), "accounts": identities}
         result["preview_digest"] = hashlib.sha256(json.dumps(digest, sort_keys=True, allow_nan=False).encode()).hexdigest()
         return result
 
@@ -318,15 +426,18 @@ class Service:
                 raise ValueError("; ".join(plan["preflight"]["errors"]))
             spec = plan["spec"]
             spec["fingerprint"] = plan["preflight"].get("fingerprint")
-            first = next(p for p in CATALOG if p["id"] == spec["providers"][0])
-            guided = bool(spec.get("guided")) or first["integration"] == "guided"
+            guided = plan.get("execution_mode") == "guided"
+            if guided and not plan.get("preparation_eligible"):
+                raise ValueError("Guided preparation is blocked. Resolve the plan's requirements before continuing.")
             if not guided and not plan["eligible"]:
                 raise ValueError("No selected resource is eligible. Resolve the plan's blockers or explicitly prepare a guided notebook.")
             if guided and all(d["mode"] == "development" for d in plan["decisions"]):
                 raise ValueError("This resource is a development helper, not a training backend.")
             jid = uuid.uuid4().hex
             spec["id"] = jid
-            pid = plan["selected_provider"] if not guided else spec["providers"][0]
+            pid = plan["selected_provider"]
+            if not pid:
+                raise ValueError("No reviewed resource can run or prepare this training. Resolve the plan's blockers.")
             path = self.jobs_root / jid
             path.mkdir()
             self._write_json(path / "spec.json", spec)
@@ -338,6 +449,8 @@ class Service:
                    "execution_mode": "guided" if guided else "automatic", "phase": "preparing", "connection_status": "connected",
                    "submission_status": "prepared", "cleanup_status": "pending", "export_status": "pending",
                    "fingerprint": plan["preflight"].get("fingerprint")}
+            job["input_snapshot"] = {"fingerprint": job["fingerprint"], "metadata": plan["preflight"].get("dataset", {})}
+            job["limit_enforcement"] = plan.get("limit_enforcement", "manual_unverified" if guided else "local" if pid == "local" else "provider_quota")
             self.save_job(job)
             if not guided:
                 self._start(jid)
@@ -434,6 +547,7 @@ class Service:
                 if self.closing.is_set():
                     return
             job["spec"]["attempt_id"] = uuid.uuid4().hex
+            job["spec"]["execution_provider"] = job["provider_id"]
             from .datasets import fingerprint_for_spec
             if job["spec"].get("fingerprint") and fingerprint_for_spec(job["spec"]) != job["spec"]["fingerprint"]:
                 raise ValueError("Inputs changed after preflight; preview this training plan again")
@@ -488,20 +602,40 @@ class Service:
                 try:
                     handle = connectors.submit(job["provider_id"], config, path / "spec.json", path, intent=intent)
                 except Exception as exc:
-                    job.update(status="interrupted", submission_status="unknown", connection_status="unknown", message="Submission was not confirmed. Reconcile this attempt before retrying: " + str(exc))
+                    self._log_provider_error(jid, exc, "submission", job["provider_id"])
+                    known_not_started = getattr(exc, "submission_outcome", "unknown") == "not_started"
+                    if getattr(exc, "intent", None):
+                        job["submission_intent"] = exc.intent
+                        if exc.intent.get("cleanup_status"):
+                            job["cleanup_status"] = exc.intent["cleanup_status"]
+                    if known_not_started and not (getattr(exc, "intent", None) or {}).get("cleanup_status"):
+                        job["cleanup_status"] = "not_required"
+                    job["submission_evidence"] = getattr(exc, "submission_evidence", None)
+                    job.update(status="error" if known_not_started else "interrupted", submission_status="not_started" if known_not_started else "unknown", connection_status="connected" if known_not_started else "unknown",
+                               error_code=getattr(exc, "code", "provider"),
+                               message=("Training did not start. Resolve this issue before retrying: " if known_not_started else "Submission was not confirmed. Reconcile this attempt before retrying: ") + str(exc))
                     self.save_job(job)
                     return
                 job.update(handle=handle, submission_status="confirmed", phase="training")
+                job["submission_evidence"] = handle.get("submission_evidence")
                 self.save_job(job)
                 self._monitor_remote(jid)
         except Exception as exc:
             job = self.job(jid)
-            job.update(status="error", message=str(exc))
+            self._log_provider_error(jid, exc, "preparation", job["provider_id"])
+            job.update(status="error", error_code=getattr(exc, "code", "provider"), message=str(exc))
+            if getattr(exc, "submission_outcome", None) == "unknown":
+                job.update(status="interrupted", submission_status="unknown", connection_status="unknown")
+                if getattr(exc, "intent", None):
+                    job["submission_intent"] = exc.intent
+            elif job.get("phase") in ("preparing", "waiting") and not job.get("handle"):
+                job.update(submission_status="not_started", cleanup_status="not_required")
+            job["submission_evidence"] = getattr(exc, "submission_evidence", None)
             self.save_job(job)
 
     @staticmethod
     def _pristine_pause(job):
-        return job.get("step", 0) == 0 and job.get("submission_status", "prepared") == "prepared" and not job.get("handle")
+        return job.get("step", 0) == 0 and (job.get("submission_status", "prepared") in ("prepared", "not_started") or Service._manually_resolved(job)) and (not job.get("handle") or Service._manually_resolved(job))
 
     def _assert_stopped(self, job):
         from .worker import worker_active
@@ -509,8 +643,10 @@ class Service:
         thread = self.threads.get(jid)
         if jid in self.processes or (thread and thread.is_alive()) or worker_active(self.jobs_root / jid):
             raise ValueError("Wait for the previous worker to stop before changing recovery data or starting another attempt.")
-        if job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal")):
+        if not self._manually_resolved(job) and (job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal"))):
             raise ValueError("Reconcile the previous remote execution before starting another attempt or replacing recovery data.")
+        if job.get("provider_id") == "lightning" and job.get("cleanup_status") in ("pending", "failed") and not self._manually_resolved(job):
+            raise ValueError("Stop and resolve the dedicated Studio before retrying; provider compute charges may continue.")
 
     def _monitor_local_orphan(self, jid):
         from .worker import worker_active
@@ -539,6 +675,7 @@ class Service:
         try:
             connectors.collect(job["provider_id"], config, job["handle"], path)
         except Exception as exc:
+            self._log_provider_error(jid, exc, "result collection", job["provider_id"])
             collection_error = str(exc)
         handle = job["handle"]  # collect may acknowledge cleanup even when it raises afterwards.
         job = self._ingest(self.job(jid))
@@ -550,7 +687,7 @@ class Service:
                 raise IntegrityError(collection_error)
             checkpoint, exported = path / "checkpoint.json", path / "export"
             if checkpoint.exists():
-                self._validate_checkpoint(job, checkpoint)
+                self._validate_checkpoint(job, checkpoint, delivery=(exported / "manifest.json").exists())
             if (exported / "manifest.json").exists():
                 metadata = verify_export(exported).get("metadata", {})
                 if metadata.get("job_id") != jid or metadata.get("recipe") != job["spec"]["recipe"] or metadata.get("fingerprint", job.get("fingerprint")) != job.get("fingerprint"):
@@ -564,6 +701,7 @@ class Service:
             job["collection_status"] = "verified"
             job.pop("collection_error", None)
         except Exception as exc:
+            self._log_provider_error(jid, exc, "result verification", job["provider_id"])
             job.update(collection_status="failed", collection_error=str(exc), status="interrupted", message="The remote execution ended, but results need recovery: " + str(exc))
             if collection_error and cleanup in ("failed", "pending"):
                 job["cleanup_error"] = collection_error
@@ -609,13 +747,16 @@ class Service:
                 self.closing.wait(10)
             except Exception as exc:
                 job = self.job(jid)
-                job.update(connection_status="retrying", message="Provider connection interrupted; this execution may still be running. Retrying: " + str(exc))
+                self._log_provider_error(jid, exc, "monitoring", job["provider_id"])
+                job.update(connection_status="retrying", error_code=getattr(exc, "code", "provider"), message="Provider connection interrupted; this execution may still be running. Retrying: " + str(exc))
                 self.save_job(job)
                 self.closing.wait(backoff)
                 backoff = min(60, backoff * 2)
 
     def reconcile(self, jid):
         job = self.job(jid)
+        if self._manually_resolved(job):
+            return job
         thread = self.threads.get(jid)
         if thread and thread.is_alive() and thread is not threading.current_thread():
             return job
@@ -628,14 +769,18 @@ class Service:
         try:
             state = connectors.reconcile(job["provider_id"], config, job.get("handle") or job.get("submission_intent"), self.jobs_root / jid)
         except Exception as exc:
-            state = {"state": "unknown", "detail": str(exc)}
+            self._log_provider_error(jid, exc, "reconciliation", job["provider_id"])
+            state = {"state": "unknown", "detail": str(exc), "error_code": getattr(exc, "code", "provider")}
         status = state.get("state", "unknown").lower()
         if state.get("handle"):
             job["handle"] = state["handle"]
         if status == "unknown" or not job.get("handle"):
-            job.update(connection_status="unknown", submission_status="unknown", message=state.get("detail", "Provider state is unresolved. Check the provider console before retrying."))
+            job.update(connection_status="unknown", submission_status="unknown",
+                       error_code=state.get("error_code", job.get("error_code", "submission_unknown")),
+                       message=state.get("detail", "Provider state is unresolved. Check the provider console before retrying."))
             return self.save_job(job)
         job.update(submission_status="confirmed", connection_status="connected", last_provider_check=now())
+        job.pop("error_code", None)
         self.save_job(job)
         if status in ("completed", "complete", "succeeded", "success", "error", "failed", "cancelled", "canceled", "paused"):
             return self._finish_remote(jid, status)
@@ -652,8 +797,83 @@ class Service:
             self.export(jid)
         except Exception as exc:
             job = self.job(jid)
+            self._log_provider_error(jid, exc, "local export", job["provider_id"])
             job.update(status="completed", export_status="failed", export_error=str(exc), message="Training finished, but local export needs attention: " + str(exc))
             self.save_job(job)
+
+    def resolve_submission(self, jid, raw):
+        """Resolve one reviewed attempt without silently issuing a new launch."""
+        with self.lock:
+            job = self.job(jid)
+            token = raw.get("recovery_token")
+            if not isinstance(token, str) or not hmac.compare_digest(token, job["recovery_token"]):
+                raise ValueError("The saved attempt changed. Refresh this run before resolving it.")
+            if "resolve-submission" not in job["allowed_actions"]:
+                raise ValueError("Only an unresolved, inactive submission can be resolved here.")
+            outcome = raw.get("outcome")
+            if outcome not in ("attach", "stopped", "absent"):
+                raise ValueError("Attach an existing execution, or confirm that you stopped it or verified it absent.")
+            if job["provider_id"] == "lightning" and job.get("cleanup_status") in ("pending", "failed") and outcome == "absent":
+                raise ValueError("A missing training process does not prove the Studio stopped. Confirm that you stopped the dedicated Studio in its console.")
+            intent = job.get("submission_intent") or job.get("handle") or {}
+            if outcome != "attach" and raw.get("confirmed") is not True:
+                raise ValueError("Confirm that you checked the selected provider account and stopped the attempt or verified it absent. Remote work can otherwise continue.")
+            config = self.connections().get(job["provider_id"], {}).get("config", {})
+        state = None
+        if outcome == "attach":
+            try:
+                state = connectors.attach(job["provider_id"], config, raw.get("execution_id"), intent, self.jobs_root / jid)
+            except Exception as exc:
+                self._log_provider_error(jid, exc, "attach existing execution", job["provider_id"])
+                raise
+            if not state.get("handle") or state.get("state", "unknown") == "unknown":
+                raise ValueError("The provider could not verify this execution's identity. The existing reservation is retained.")
+        with self.lock:
+            job = self.job(jid)
+            if not hmac.compare_digest(token, job["recovery_token"]) or "resolve-submission" not in job["allowed_actions"]:
+                raise ValueError("The saved attempt changed during verification. Refresh this run.")
+            legacy_identity = not job["spec"].get("attempt_id")
+            if legacy_identity:
+                # This is a local recovery nonce, never a claimed provider ID.
+                job["spec"]["attempt_id"] = "recovery-" + uuid.uuid4().hex
+            resolution = {"outcome": outcome, "source": "provider_verified" if state else "user_confirmed",
+                          "attempt_id": job["spec"]["attempt_id"], "checked_at": now(),
+                          "identity_source": "local_recovery" if legacy_identity else "saved_attempt",
+                          "provider_id": job["provider_id"], "note": connectors.redact_provider_output(str(raw.get("note", ""))[:1000])}
+            job["submission_resolution"] = resolution
+            if state:
+                job.update(handle=state["handle"], submission_status="confirmed", connection_status="connected", last_provider_check=now())
+                job.pop("error_code", None)
+            else:
+                if job["provider_id"] == "lightning" and job.get("cleanup_status") in ("pending", "failed"):
+                    job["cleanup_status"] = "user_confirmed_stopped"
+                job.update(status="interrupted", phase="resolved", message="You confirmed in the provider console that this attempt is " + ("stopped" if outcome == "stopped" else "absent") + ". This was not independently verified. Review settings before a separate retry.")
+            self.save_job(job)
+        if state:
+            return self.reconcile(jid)
+        return self.job(jid)
+
+    def relocate_inputs(self, jid, raw):
+        from .datasets import load_dataset
+        with self.lock:
+            job = self.job(jid)
+            self._assert_stopped(job)
+            if "relocate-inputs" not in job["allowed_actions"]:
+                raise ValueError("Stop and resolve the run before relinking its inputs.")
+            updates = {key: raw[key] for key in ("dataset_path", "script_path") if key in raw and raw[key]}
+            if not updates or any(not isinstance(value, str) for value in updates.values()):
+                raise ValueError("Choose an identical relocated dataset or training script.")
+            candidate = validate_spec({**job["spec"], **updates}, self.settings()["output_dir"])
+            data = load_dataset(candidate)
+            expected = job.get("fingerprint") or job.get("input_snapshot", {}).get("fingerprint")
+            if not expected or data["fingerprint"] != expected:
+                raise ValueError("The selected inputs differ from the original run. Original recovery data was preserved.")
+            job["spec"].update({key: candidate[key] for key in updates})
+            job["input_snapshot"] = {"fingerprint": expected, "metadata": data["metadata"]}
+            job["inputs_relocated_at"] = now()
+            self._write_json(self.jobs_root / jid / "spec.json", job["spec"])
+            self.save_job(job)
+            return self.job(jid)
 
     def _continue_to_next(self, job):
         """Only move a committed checkpoint; never shorten the requested target."""
@@ -717,6 +937,7 @@ class Service:
                 if state["step"] >= state["total_steps"]:
                     raise ValueError("This checkpoint already reached the training target. Verify and export its results.")
             candidate_spec = {**job["spec"]}
+            candidate_spec["guided"] = False
             if providers is not None:
                 candidate_spec["providers"] = providers
             others = [item for item in self.jobs() if item["id"] != jid]
@@ -727,13 +948,15 @@ class Service:
                 raise ValueError("No selected resource is currently eligible. Check provider connections and allowances.")
             stop = self.jobs_root / jid / "STOP"
             stop.unlink(missing_ok=True)
-            job["spec"] = {**job["spec"], "providers": plan["spec"]["providers"]}
+            job["spec"] = {**job["spec"], "providers": plan["spec"]["providers"], "guided": False}
             if checkpoint.exists():
                 job["spec"]["resume_from"] = str(checkpoint)
             else:
                 job["spec"].pop("resume_from", None)
             job.update(status="queued", provider_id=plan["selected_provider"], message="Resuming from the last committed checkpoint.")
-            for key in ("handle", "submission_intent", "remote_terminal", "stop_requested"):
+            if job.get("submission_intent") or job.get("submission_resolution"):
+                job.setdefault("attempt_history", []).append({key: job.get(key) for key in ("submission_intent", "handle", "submission_status", "submission_resolution")})
+            for key in ("handle", "submission_intent", "remote_terminal", "stop_requested", "submission_resolution", "error_code"):
                 job.pop(key, None)
             job.update(submission_status="prepared", connection_status="connected", execution_mode="automatic")
             job["attempted_providers"] = [job["provider_id"]]
@@ -745,6 +968,7 @@ class Service:
 
     def export(self, jid, output_dir=None):
         from .artifacts import export_verified, verify_export
+        from .prediction import inference_capability
         with self.lock:
             job = self.job(jid)
             path = self.jobs_root / jid
@@ -756,18 +980,23 @@ class Service:
             job["export_path"] = str(result)
             job["spec"]["output_dir"] = selected
             job["export_status"] = "verified"
-            job["artifacts"] = verify_export(result)["files"]
+            manifest = verify_export(result)
+            job["artifacts"] = manifest["files"]
+            job["inference"] = inference_capability(result, manifest)
             job["export_verified_at"] = now()
             job["phase"] = "completed"
             job.pop("export_error", None)
             job["message"] = "Model files verified and saved locally. Remote cleanup remains under your control."
             return self.save_job(job)
 
-    def _validate_checkpoint(self, job, checkpoint):
+    def _validate_checkpoint(self, job, checkpoint, delivery=False):
         from .artifacts import checkpoint_assets, load_checkpoint, IntegrityError, validate_checkpoint_payload
         from .datasets import load_dataset
+        from .imports import frozen_dataset
         state = load_checkpoint(checkpoint)
-        data = load_dataset(job["spec"])
+        data = frozen_dataset(job) if delivery else None
+        if data is None:
+            data = load_dataset(job["spec"])
         expected = job.get("fingerprint") or data["fingerprint"]
         if state.get("job_id") != job["id"] or state.get("recipe") != job["spec"]["recipe"] or state.get("total_steps") != job["spec"]["steps"] or state.get("fingerprint") != expected:
             raise IntegrityError("Checkpoint identity or training inputs do not match this run.")
@@ -781,7 +1010,7 @@ class Service:
         from .artifacts import atomic_bytes, load_checkpoint
         with self.lock:
             job = self.job(jid)
-            if job["status"] not in TERMINAL or job.get("submission_status") == "unknown":
+            if job["status"] not in TERMINAL or (job.get("submission_status") == "unknown" and not self._manually_resolved(job)):
                 raise ValueError("Resolve and stop the previous execution before restoring a checkpoint.")
             self._assert_stopped(job)
             if raw.get("checkpoint", "previous") != "previous":
@@ -825,7 +1054,7 @@ class Service:
     def archive(self, jid, archived=True):
         with self.lock:
             job = self.job(jid)
-            if job["status"] not in TERMINAL or job.get("submission_status") == "unknown":
+            if job["status"] not in TERMINAL or (job.get("submission_status") == "unknown" and not self._manually_resolved(job)):
                 raise ValueError("Stop and resolve this execution before archiving it.")
             self._assert_stopped(job)
             job["archived"] = bool(archived)
@@ -848,7 +1077,7 @@ class Service:
             source = raw.get("path")
             if not isinstance(source, str) or not source.strip():
                 raise ValueError("Enter the local path of your downloaded results folder or ZIP.")
-            if job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal")):
+            if not self._manually_resolved(job) and (job.get("submission_status") == "unknown" or (job.get("handle") and not job.get("remote_terminal"))):
                 raise ValueError("Resolve the remote execution before replacing local recovery data.")
             result = import_results(Path(source).expanduser(), self.jobs_root / jid, job, preview_only=bool(raw.get("preview")), allow_rollback=raw.get("allow_rollback") is True, expected_digest=raw.get("preview_digest"))
             if raw.get("preview"):
@@ -887,6 +1116,11 @@ class Service:
                 raise ValueError("Codespaces is a repository development helper, not a training backend.")
             if pid not in job["spec"]["providers"]:
                 raise ValueError("Choose a provider selected for this run.")
+            admission = preview({**job["spec"], "providers": [pid], "guided": True}, CATALOG,
+                                self.connections(), self.hardware, [other for other in self.jobs() if other["id"] != jid])
+            if not admission.get("preparation_eligible"):
+                reason = admission["decisions"][0]["reason"] if admission.get("decisions") else "This provider cannot prepare the selected recipe."
+                raise ValueError(reason)
             path = self.jobs_root / jid
             checkpoint = path / "checkpoint.json"
             if checkpoint.exists():
@@ -934,6 +1168,9 @@ class Service:
 
     def shutdown(self):
         self.closing.set()
+        environment = getattr(self, "environment", None)
+        if environment:
+            environment.shutdown()
         for jid in list(self.processes):
             (self.jobs_root / jid / "STOP").touch()
         for process in list(self.processes.values()):

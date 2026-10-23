@@ -89,10 +89,11 @@ def provider_setup(provider_id, connection=None, hardware=None):
                         "lightning": "https://lightning.ai/docs/platform/developers/cli/"}[provider_id]
             steps.append(_step("signin", "Sign in with the native client", "Run this command in Windows PowerShell on this computer, then finish the provider's browser sign-in.",
                                commands=[_cli_command(provider_id, hardware)],
+                               actions=[{"type": "provider-signin", "label": "Sign in with " + provider["name"], "provider_id": provider_id}],
                                instructions=["The command targets the app's displayed Python environment. Do not paste tokens into MultiGPU."],
                                links=[_link("Official sign-in instructions", auth_url)]))
             steps.append(_step("verify", "Save settings and check the account", "Enter the nonsecret connection settings below and check this provider.",
-                               automatic=True, ready=bool(connection.get("ready") and connection.get("account_verified")),
+                               automatic=True, ready=bool(connection.get("account_verified")),
                                instructions=provider["setup_steps"][2:], actions=[{"type": "probe", "label": "Save & check"}],
                                blocking_reason=connection.get("detail") or "The provider has not confirmed a ready connection."))
         elif provider["integration"] != "development":

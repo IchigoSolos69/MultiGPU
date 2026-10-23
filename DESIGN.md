@@ -1,5 +1,9 @@
 # MultiGPU interface
 
+## Version 0.4 journey refinements
+
+Operate mode and the existing framed workspace remain. Built-in recipes and custom scripts are peer choices. Account verification, allowance, actual hardware and qualification use separate labels. Review shows the exact resolved mode; blocked actions lead to corrections. Manual sessions emphasize notebook handoff/import instead of empty live charts. Recovery shows the saved attempt, explicit console confirmation and its provenance; a focused form keeps the snapshot the user reviewed. Polling updates status and actions without replacing focused controls or selected logs. Named prediction features and verified delivery lead the completed run. Windows recovery and tray notifications use native surfaces.
+
 The primary question is **Where can I train within my allowance?** The first screen answers with real resource readiness, actual runs, and a clear next action. A new workspace has no training charts, generated GPU counts, or invented quotas.
 
 The direction is the design-taste frontend skill's light **framed-sheet** app style: a cool gray L-frame, 220px labelled sidebar, and one white working sheet. The product face comes from its four-block compute mark and the resource/allowance/readiness comparison that leads the overview. Blue belongs to training data and the primary action; navigation uses neutral selection.

@@ -124,7 +124,6 @@ class OnboardingTests(unittest.TestCase):
         session = self.root / "paired-session"
         session.mkdir()
         shutil.copyfile(payload, session / payload.name)
-        session.rmdir if False else None
         document = json.loads(notebook.read_text())
         runner = session / "run.py"
         runner.write_text("\n".join("".join(cell["source"]) for cell in document["cells"] if cell["cell_type"] == "code"), encoding="utf-8")

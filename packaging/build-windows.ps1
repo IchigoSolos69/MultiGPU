@@ -1,4 +1,4 @@
-param([string]$Version = '0.3.0', [string]$Compiler, [switch]$PrepareOnly)
+param([string]$Version = '0.4.0', [string]$Compiler, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = Join-Path $repository 'build'
@@ -33,7 +33,7 @@ $actualVersion = (& $python.FullName -c 'import platform; print(platform.python_
 if ($actualVersion -ne $pythonVersion) { throw "Expected Python $pythonVersion; found $actualVersion." }
 
 # An explicit allowlist prevents credentials, exports, .env, tests and local state from entering the installer.
-$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','planner.py','prediction.py','recipes.py','server.py','service.py','store.py','worker.py')
+$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','planner.py','prediction.py','process_control.py','recipes.py','server.py','service.py','store.py','worker.py')
 $appRoot = Join-Path $payload 'multigpu'
 New-Item -ItemType Directory -Path (Join-Path $appRoot 'static') -Force | Out-Null
 foreach ($name in $appFiles) { Copy-Item -LiteralPath (Join-Path $repository "multigpu/$name") -Destination $appRoot }

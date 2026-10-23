@@ -65,8 +65,16 @@ def load_checkpoint(path: Path) -> dict:
         raise IntegrityError(f"Checkpoint does not exist: {path}")
     if path.stat().st_size > 64 * 1024 * 1024:
         raise IntegrityError("Checkpoint exceeds the 64 MB portable-state limit")
+    with path.open("rb") as handle:
+        return decode_checkpoint(handle.read(64 * 1024 * 1024 + 1))
+
+
+def decode_checkpoint(contents: bytes) -> dict:
+    """Validate the exact bytes that a caller will commit or hash."""
+    if len(contents) > 64 * 1024 * 1024:
+        raise IntegrityError("Checkpoint exceeds the 64 MB portable-state limit")
     try:
-        envelope = json.loads(path.read_text(encoding="utf-8"))
+        envelope = json.loads(contents)
         state = envelope["state"]
         expected = envelope["manifest"]["state_sha256"]
         if envelope["format"] != "multigpu-checkpoint-v1" or not isinstance(state, dict):
@@ -127,8 +135,11 @@ def validate_checkpoint_payload(state: dict, spec: dict | None = None, dataset: 
         indices = train + validation
         require(len(indices) <= 1_000_000 and all(type(i) is int and i >= 0 for i in indices) and len(set(indices)) == len(indices), "split indices must be unique nonnegative integers")
         require(set(indices) == set(range(len(indices))), "split indices do not cover the dataset")
-        if dataset:
+        if dataset and not dataset.get("frozen_metadata"):
             require(train == dataset.get("train_indices") and validation == dataset.get("validation_indices"), "saved data split differs from this run")
+        elif dataset:
+            require(len(indices) == metadata.get("rows") and len(train) == metadata.get("train_rows")
+                    and len(validation) == metadata.get("validation_rows"), "saved split sizes differ from this run")
     if recipe in ("starter", "pytorch"):
         if recipe == "pytorch":
             require(isinstance(payload.get("architecture"), dict), "MLP architecture is missing")

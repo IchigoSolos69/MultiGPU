@@ -21,6 +21,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from urllib.parse import urlsplit, urlunsplit
 
 from .catalog import get_provider
 
@@ -29,22 +30,80 @@ _MAX_STAGE_BYTES = 512 * 1024 * 1024
 class ConnectorError(RuntimeError):
     """An actionable failure; remote execution must not be inferred from it."""
 
-    def __init__(self, message, *, code="provider", transient=False, intent=None):
+    def __init__(self, message, *, code="provider", transient=False, intent=None, diagnostic=None,
+                 submission_outcome=None, submission_evidence=None):
         super().__init__(message)
         self.code, self.transient, self.intent = code, transient, intent
+        self.diagnostic = diagnostic
+        if submission_outcome not in (None, "not_started", "unknown", "confirmed"):
+            raise ValueError("Invalid submission outcome")
+        self.submission_outcome = submission_outcome
+        self.submission_evidence = submission_evidence
+
+
+_SECRET_FIELD = re.compile(r"(?i)(authorization|cookie|password|credential|token|secret|api[_-]?key|private[_-]?key|(?:^|[_-])key$)")
+
+
+def redact_diagnostic(value):
+    if isinstance(value, dict):
+        return {str(key): "[credential value redacted]" if _SECRET_FIELD.search(str(key)) else redact_diagnostic(item)
+                for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_diagnostic(item) for item in value]
+    return redact_provider_output(value) if isinstance(value, (str, bytes)) else value
+
+
+def redact_provider_output(value):
+    """Keep useful provider errors while removing credentials before persistence."""
+    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    if text.lstrip().startswith(("{", "[")):
+        try:
+            return json.dumps(redact_diagnostic(json.loads(text)), ensure_ascii=False)[-8000:]
+        except (ValueError, TypeError):
+            pass
+    def url(match):
+        try:
+            parsed = urlsplit(match.group())
+            host = parsed.hostname or ""
+            if parsed.port:
+                host += ":" + str(parsed.port)
+            return urlunsplit((parsed.scheme, host, parsed.path, "[redacted]" if parsed.query else "", ""))
+        except ValueError:
+            return "[redacted URL]"
+    text = re.sub(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>\"']+", url, text)
+    field = re.compile(r"(?i)(?:authorization|cookie|[A-Za-z0-9_.-]*(?:password|credential|token|secret|api[_-]?key|private[_-]?key|[_-]key)|\bkey)\s*[\"']?\s*[:=]")
+    lines, hide_next = [], False
+    for line in text.splitlines():
+        if field.search(line):
+            lines.append("[credential field redacted]")
+            hide_next = bool(re.search(r"[:=]\s*$", line))
+        elif hide_next:
+            lines.append("[credential value redacted]")
+            hide_next = not bool(line.strip())
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    text = re.sub(r"(?i)\b(?:bearer|basic)\s+\S+", "[authorization redacted]", text)
+    text = re.sub(r"\b(?:KGAT_|kgat_)[A-Za-z0-9_.-]+", "[token redacted]", text)
+    text = re.sub(r"\beyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){1,2}", "[token redacted]", text)
+    text = re.sub(r"[A-Za-z0-9_+/=-]{28,}", "[opaque value redacted]", text)
+    return text[-8000:]
 
 
 def _provider_error(provider, exc, action):
     name = type(exc).__name__
     lowered = name.lower()
     status = getattr(exc, "status_code", None)
+    diagnostic = {"client": provider, "operation": action, "exception_type": name,
+                  "error": redact_provider_output(str(exc))}
     if status in {401, 403} or any(word in lowered for word in ("auth", "permission", "credential")):
-        return ConnectorError(f"{provider} authentication or permission check failed. Sign in with its native tools again.", code="auth")
+        return ConnectorError(f"{provider} authentication or permission check failed. Sign in with its native tools again.", code="auth", diagnostic=diagnostic)
     if status == 404 or name in {"NotFoundError", "NotFound"}:
-        return ConnectorError(f"{provider} did not find the saved resource during {action}. Inspect its console before retrying.", code="not_found")
+        return ConnectorError(f"{provider} did not find the saved resource during {action}. Inspect its console before retrying.", code="not_found", diagnostic=diagnostic)
     if status in {429, 500, 502, 503, 504} or any(word in lowered for word in ("connection", "timeout", "service", "unavailable")):
-        return ConnectorError(f"{provider} is temporarily unreachable during {action}; the remote execution may still be running.", code="network", transient=True)
-    return ConnectorError(f"{provider} {action} failed ({name}). Inspect its console; private provider error text was withheld.")
+        return ConnectorError(f"{provider} is temporarily unreachable during {action}; the remote execution may still be running.", code="network", transient=True, diagnostic=diagnostic)
+    return ConnectorError(f"{provider} {action} failed ({name}). Inspect its console; private provider error text was withheld.", diagnostic=diagnostic)
 
 
 def _sdk(name, install):
@@ -61,20 +120,57 @@ def _check_config(config):
 
 
 def _cli(name, args, timeout=60):
-    executable = shutil.which(name)
-    command = [executable, *args] if executable else [sys.executable, "-m", name, *args]
+    # Setup and execution must use the same app-owned interpreter, never PATH.
+    command = [sys.executable, "-m", name, *args]
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout,
-                                encoding="utf-8", errors="replace", check=False)
-    except subprocess.TimeoutExpired:
-        raise ConnectorError(f"{name} did not respond within {timeout} seconds. Check the provider console before retrying a submission.", code="network", transient=True) from None
-    except OSError:
-        raise ConnectorError(f"Could not start {name}. Install its current CLI in this Python environment.", code="missing_dependency") from None
-    if result.returncode:
-        # Provider errors can contain auth headers. Do not persist or echo them.
+                                encoding="utf-8", errors="replace", check=False,
+                                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as exc:
+        raise ConnectorError(f"{name} did not respond within {timeout} seconds. Check the provider console before retrying a submission.", code="network", transient=True,
+                             diagnostic={"client": name, "command": [name], "python": sys.executable, "timeout_seconds": timeout,
+                                         "exception_type": type(exc).__name__, "stdout": redact_provider_output(exc.stdout or ""),
+                                         "stderr": redact_provider_output(exc.stderr or "")}) from None
+    except OSError as exc:
+        raise ConnectorError(f"Could not start {name}. Install its current CLI in this Python environment.", code="missing_dependency",
+                             submission_outcome="not_started", submission_evidence={"stage": "client_spawn", "reason": "Operating system did not start the provider client."},
+                             diagnostic={"client": name, "command": [name], "python": sys.executable,
+                                         "exception_type": type(exc).__name__, "error": redact_provider_output(str(exc))}) from None
+    rejected = name == "kaggle" and args[:2] == ["kernels", "push"] and bool(re.search(r"(?im)^kernel push error:", result.stdout))
+    if result.returncode or rejected:
+        # Classify known failures; never persist or echo provider error text.
         diagnostic = (result.stdout + result.stderr).lower()
-        code = "auth" if any(x in diagnostic for x in ("unauthorized", "forbidden", "invalid credentials", "401", "403")) else "not_found" if "404" in diagnostic or "not found" in diagnostic else "network" if any(x in diagnostic for x in ("timeout", "connection", "temporarily", "503", "502", "504", "429")) else "provider"
-        raise ConnectorError(f"{name} command failed. Check the native CLI version, authentication and provider console; provider error text was withheld to protect credentials.", code=code, transient=code == "network")
+        if any(x in diagnostic for x in ("no module named", "cannot be directly executed")):
+            code, detail = "missing_dependency", "The provider client is missing or incomplete in this app. Open provider setup and prepare its tools again."
+        elif any(x in diagnostic for x in ("unrecognized arguments", "invalid choice:", "unrecognized argument")):
+            code, detail = "unsupported_cli", "The app's provider client does not support this command. Open provider setup and update its tools."
+        elif any(x in diagnostic for x in ("cannot access kernel", "permission", "forbidden", "403")):
+            code, detail = "permission", "Kaggle denied access to this notebook or action. Check the selected account and notebook URL in Kaggle. A missing or private notebook can produce the same denial."
+        elif any(x in diagnostic for x in ("unauthorized", "invalid credentials", "401", "auth login", "could not find kaggle.json", "not authenticated")):
+            code, detail = "auth", "Native authentication is missing or expired. Open provider setup and sign in with this app's native client again."
+        elif "404" in diagnostic or "not found" in diagnostic or "could not find kernel" in diagnostic:
+            code, detail = "not_found", "The provider did not find the saved notebook. Check its URL and account; this does not prove a previous submission never started."
+        elif any(x in diagnostic for x in ("timeout", "connection", "temporarily", "503", "502", "504", "429")):
+            code, detail = "network", "The provider is temporarily unreachable or rate-limited. Recheck the saved execution before retrying any launch."
+        elif "quota" in diagnostic and any(x in diagnostic for x in ("exceed", "exhaust", "limit")):
+            code, detail = "quota", "The provider rejected the request because of an account or compute quota. Check the provider's current allowance."
+        elif any(x in diagnostic for x in ("accelerator", "machine_shape", "machine shape", "capacity")):
+            code, detail = "invalid_resource", "The provider rejected the requested accelerator or has no available capacity. Check the available compute in its console."
+        elif any(x in diagnostic for x in ("400", "bad request", "invalid argument", "validationerror")):
+            code, detail = "invalid_resource", "The provider rejected the submitted notebook settings. Check its runtime permissions and configuration in the provider console."
+        else:
+            code, detail = "provider", "The provider client failed. Recheck the saved attempt and provider setup before another submission."
+        no_dispatch = bool(
+            code == "missing_dependency" and re.search(r"(?im)^(?:[^\r\n]*python[0-9.]*(?:\.exe)?:\s*)?No module named ['\"]?" + re.escape(name) + r"(?:\.__main__)?(?:['\";\s]|$)", result.stderr)
+            or code == "unsupported_cli" and result.returncode == 2 and re.search(r"(?im)^(?:[\w. -]+:\s*error:\s*)?(?:unrecognized arguments?:|invalid choice:)", result.stderr))
+        raise ConnectorError(f"{detail} Client exit code: {result.returncode}. Private provider text was withheld.",
+                             code=code, transient=code == "network",
+                             submission_outcome="not_started" if no_dispatch else None,
+                             submission_evidence={"stage": "client_initialization", "reason": "The Python client could not load or rejected its command-line syntax before dispatch."} if no_dispatch else None,
+                             diagnostic={"client": name, "error_code": code, "command": [name, *[a for a in args[:2] if a in {"quota", "config", "view", "kernels", "push", "status", "logs", "output"}]],
+                                         "python": sys.executable, "exit_code": result.returncode,
+                                         "stdout": redact_provider_output(result.stdout), "stderr": redact_provider_output(result.stderr)})
     return result.stdout
 
 
@@ -111,7 +207,7 @@ def _kaggle_identity(config):
     # config view prints only the native client's selected non-secret settings.
     output = _cli("kaggle", ["config", "view"])
     match = re.search(r"(?im)^\s*-?\s*username\s*:\s*([A-Za-z0-9_-]+)\s*$", output)
-    if not match:
+    if not match or match.group(1).casefold() in {"none", "null"}:
         raise ConnectorError("Kaggle did not report its authenticated username. Upgrade the native CLI and authenticate before checking again.", code="auth")
     actual = match.group(1)
     expected = str(config.get("username", "")).strip()
@@ -226,12 +322,14 @@ def probe(provider_id, config):
                           machine_options=["CPU", "T4", "L4", "L40S", "A100"],
                           detail=f"Lightning Studio found ({status}). Free-only credit enforcement is unverified and blocked.")
         else:
-            result.update(detail="Assisted setup only. Generate a notebook bundle and launch it yourself under the provider's current terms.")
+            result.update(detail="Follow the in-app setup guide, download the training notebook, and run it in your provider account under its current terms.")
         if result["account_verified"] or provider_id == "local":
             result["connection_status"] = "connected"
     except ConnectorError as exc:
         result["detail"] = str(exc)
         result["error_code"] = exc.code
+        if exc.diagnostic:
+            result["diagnostic"] = exc.diagnostic
         result["connection_status"] = "auth_required" if exc.code in {"auth", "account_mismatch"} else "retrying" if exc.transient else "unknown"
     except Exception as exc:
         result["detail"] = f"Provider verification failed ({type(exc).__name__}). Check native authentication and account permissions."
@@ -321,6 +419,17 @@ def _stage(spec_path, job_dir):
     return stage, spec
 
 
+def _stage_for_provider(provider_id, spec_path, job_dir):
+    stage, spec = _stage(spec_path, job_dir)
+    # GPU indices identify devices on one host. Never send the laptop's index to
+    # a different runtime, including a notebook that resumes a local checkpoint.
+    spec["execution_provider"] = provider_id
+    if provider_id != "local":
+        spec["gpu_index"] = 0
+    _json_write(stage / "spec.json", spec)
+    return stage, spec
+
+
 def _payload_files(stage):
     for path in sorted(stage.rglob("*")):
         relative = path.relative_to(stage)
@@ -390,7 +499,7 @@ def _training_manifest(stage):
     return json.dumps({"format": "multigpu-training-payload-v1", "files": files}, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-_EXTERNAL_PAYLOAD_RUNNER = r'''import hashlib, json, os, runpy, shutil, sys, zipfile
+_EXTERNAL_PAYLOAD_RUNNER = r'''import hashlib, json, os, runpy, sys, zipfile
 from pathlib import Path, PurePosixPath
 root = Path.cwd()
 name = "multigpu-payload-manifest.json"
@@ -493,7 +602,7 @@ def build_notebook(provider_id, config, spec_path, job_dir):
     _check_config(config)
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     separate = needs_payload(original, Path(spec_path).parent)
-    stage, spec = _stage(spec_path, job_dir)
+    stage, spec = _stage_for_provider(provider_id, spec_path, job_dir)
     try:
         if separate:
             digest = hashlib.sha256(_training_manifest(stage)).hexdigest()
@@ -517,7 +626,7 @@ def build_notebook_payload(provider_id, config, spec_path, job_dir):
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     if not needs_payload(original, Path(spec_path).parent):
         raise ConnectorError("This small job's notebook already includes its training inputs; no separate payload is needed.")
-    stage, _ = _stage(spec_path, job_dir)
+    stage, _ = _stage_for_provider(provider_id, spec_path, job_dir)
     target = Path(job_dir) / "training-payload.zip"
     temporary = target.with_suffix(".zip.tmp")
     try:
@@ -537,7 +646,7 @@ def build_bundle(provider_id, config, spec_path, job_dir):
     """Create a self-contained notebook ZIP; this does not start remote compute."""
     get_provider(provider_id)
     _check_config(config)
-    stage, _ = _stage(spec_path, job_dir)
+    stage, _ = _stage_for_provider(provider_id, spec_path, job_dir)
     source = _embedded(stage)
     notebook = dict(cells=[dict(cell_type="markdown", metadata={}, source=[
         "# MultiGPU training bundle\nLaunch this notebook yourself on authorized compute. "
@@ -564,7 +673,7 @@ def build_bundle(provider_id, config, spec_path, job_dir):
 
 def _paid_policy(config, spec):
     if spec.get("free_only", config.get("free_only", True)):
-        raise ConnectorError("Automatic free-only execution is blocked for this credit-backed provider: this app cannot independently verify an enforceable zero-spend cap. Use the guided bundle or explicitly choose paid execution with native billing controls.")
+        raise ConnectorError("Automatic free-only execution is blocked for this credit-backed provider: this app cannot independently verify an enforceable zero-spend cap. Follow the in-app notebook guide or explicitly choose paid execution with native billing controls.")
     if config.get("budget_confirmed") is not True or config.get("entitlement_confirmed") is not True:
         raise ConnectorError("Confirm your provider entitlement and configure native billing controls before authorizing paid execution. These confirmations are user assertions, not a verified free allowance.")
     limit, cap = config.get("native_spend_limit"), spec.get("paid_cap")
@@ -599,6 +708,19 @@ def _bound_config(config, value):
 
 
 def prepare(provider_id, config, spec_path, job_dir):
+    try:
+        return _prepare(provider_id, config, spec_path, job_dir)
+    except ConnectorError as exc:
+        if exc.submission_outcome is None:
+            exc.submission_outcome = "not_started"
+            exc.submission_evidence = {"stage": "preflight", "reason": "Preparation does not launch provider training."}
+        raise
+    except Exception as exc:
+        raise ConnectorError(f"Submission preparation failed ({type(exc).__name__}); no provider launch was attempted.", code="preflight_failed",
+                             submission_outcome="not_started", submission_evidence={"stage": "preflight", "reason": "Local preparation failed before provider mutation."}) from None
+
+
+def _prepare(provider_id, config, spec_path, job_dir):
     """Read-only remote preflight and local staging; safe to persist before submit."""
     get_provider(provider_id)
     _check_config(config)
@@ -607,11 +729,24 @@ def prepare(provider_id, config, spec_path, job_dir):
     digest = hashlib.sha256(Path(spec_path).read_bytes()).hexdigest()
     saved = job_dir / ("intent-" + provider_id + ".json")
     if saved.is_file():
-        prior = json.loads(saved.read_text(encoding="utf-8"))
+        try:
+            prior = json.loads(saved.read_text(encoding="utf-8"))
+            if not isinstance(prior, dict):
+                raise ValueError("Invalid saved intent")
+        except (OSError, ValueError):
+            raise ConnectorError("The existing provider intent cannot be read. Inspect that attempt before preparing another launch.", code="submission_unknown", submission_outcome="unknown",
+                                 submission_evidence={"stage": "existing_journal", "reason": "The saved submission identity cannot be verified."}) from None
         if prior.get("spec_sha256") == digest:
             prior_record = _record_path(prior, job_dir)
-            prior_status = json.loads(prior_record.read_text(encoding="utf-8")).get("submission_status") if prior_record.is_file() else None
-            if prior_status != "not_submitted":
+            try:
+                prior_data = json.loads(prior_record.read_text(encoding="utf-8")) if prior_record.is_file() else {}
+                if not isinstance(prior_data, dict):
+                    raise ValueError("Invalid submission journal")
+                prior_status = prior_data.get("submission_status")
+            except (OSError, ValueError):
+                raise ConnectorError("The existing submission journal cannot be read. Inspect that attempt before preparing another launch.", code="submission_unknown", intent=prior,
+                                     submission_outcome="unknown", submission_evidence={"stage": "existing_journal", "reason": "The saved submission outcome cannot be verified."}) from None
+            if prior_status not in {"not_submitted", "not_started"}:
                 return prior
     spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     attempt = uuid.uuid4().hex
@@ -640,7 +775,7 @@ def prepare(provider_id, config, spec_path, job_dir):
         intent.update(identity=_lightning_identity(config, studio), remote_dir="multigpu-runs/" + attempt,
                       requested_machine=_machine_name(machine), dedicated_studio=True, stop_studio_after_run=True)
     if provider_id in {"local", "kaggle", "modal", "lightning"}:
-        stage, staged_spec = _stage(spec_path, job_dir)
+        stage, staged_spec = _stage_for_provider(provider_id, spec_path, job_dir)
         if provider_id == "kaggle":
             staged_spec["runtime_seconds"] = intent["runtime_seconds"]
             _json_write(stage / "spec.json", staged_spec)
@@ -650,6 +785,22 @@ def prepare(provider_id, config, spec_path, job_dir):
 
 
 def submit(provider_id, config, spec_path, job_dir, intent=None):
+    """Return a confirmed handle, or carry explicit evidence of launch uncertainty."""
+    try:
+        return _submit(provider_id, config, spec_path, job_dir, intent)
+    except ConnectorError as exc:
+        if exc.submission_outcome is None:
+            exc.submission_outcome = "not_started"
+            exc.submission_evidence = {"stage": "preflight", "reason": "Failed before a provider launch was attempted."}
+        exc.intent = exc.intent or intent
+        raise
+    except Exception as exc:
+        raise ConnectorError(f"Could not prepare submission ({type(exc).__name__}); no provider launch was attempted.",
+                             code="preflight_failed", intent=intent, submission_outcome="not_started",
+                             submission_evidence={"stage": "preflight", "reason": "Local preparation failed before provider mutation."}) from None
+
+
+def _submit(provider_id, config, spec_path, job_dir, intent=None):
     get_provider(provider_id)
     _check_config(config)
     job_dir = Path(job_dir)
@@ -657,16 +808,30 @@ def submit(provider_id, config, spec_path, job_dir, intent=None):
     if provider_id not in {"local", "kaggle", "modal", "lightning"}:
         bundle = build_bundle(provider_id, config, spec_path, job_dir)
         return dict(provider=provider_id, state="awaiting_user", bundle_path=str(bundle),
-                    detail="Bundle prepared locally. No provider runtime has been launched.")
+                    detail="Training files prepared locally. Follow the in-app guide; no provider runtime has been launched.")
     intent = intent or prepare(provider_id, config, spec_path, job_dir)
     if intent.get("provider") != provider_id or intent.get("spec_sha256") != hashlib.sha256(Path(spec_path).read_bytes()).hexdigest():
         raise ConnectorError("The submission intent does not match this provider and job specification.", code="intent_mismatch")
     record = _record_path(intent, job_dir)
     if record.exists():
-        previous = json.loads(record.read_text(encoding="utf-8"))
+        try:
+            previous = json.loads(record.read_text(encoding="utf-8"))
+            if not isinstance(previous, dict):
+                raise ValueError("Invalid submission journal")
+        except (OSError, ValueError):
+            raise ConnectorError("The existing submission journal cannot be read. Inspect that attempt before retrying.", code="submission_unknown", intent=intent,
+                                 submission_outcome="unknown", submission_evidence={"stage": "existing_journal", "reason": "The saved submission outcome cannot be verified."}) from None
         if previous.get("submission_status") == "confirmed":
-            return previous["handle"]
-        raise ConnectorError("This attempt may already have launched. Reconnect to its saved provider identity; automatic resubmission is blocked.", code="submission_unknown", intent=intent)
+            confirmed = previous.get("handle")
+            if not _matching_attempt(confirmed, intent, ("provider", "attempt_id", "job_id", "spec_sha256")):
+                raise ConnectorError("The saved acknowledgment has no matching execution identity. Reconcile this attempt before retrying.", code="submission_unknown", intent=intent,
+                                     submission_outcome="unknown", submission_evidence={"stage": "existing_journal", "reason": "A launch was acknowledged but its handle cannot be verified."})
+            return confirmed
+        if previous.get("submission_status") in {"not_started", "not_submitted"}:
+            raise ConnectorError("This attempt did not start. Prepare a fresh attempt after fixing its setup.", code="not_started", intent=intent,
+                                 submission_outcome="not_started", submission_evidence=previous.get("submission_evidence"))
+        raise ConnectorError("This attempt may already have launched. Reconnect to its saved provider identity; automatic resubmission is blocked.", code="submission_unknown", intent=intent,
+                             submission_outcome="unknown", submission_evidence={"stage": "existing_journal", "reason": "This attempt already has an unresolved submission claim."})
     config = _bound_config(config, intent)
     stage = Path(intent["stage_path"])
     if not stage.is_dir() or not stage.resolve().is_relative_to(job_dir.resolve()):
@@ -694,7 +859,12 @@ def submit(provider_id, config, spec_path, job_dir, intent=None):
         with record.open("x", encoding="utf-8") as stream:
             json.dump({**intent, "submission_status": "submitting"}, stream)
     except FileExistsError:
-        raise ConnectorError("Another submission owns this attempt. Reconnect before retrying.", code="submission_unknown", intent=intent) from None
+        raise ConnectorError("Another submission owns this attempt. Reconnect before retrying.", code="submission_unknown", intent=intent,
+                             submission_outcome="unknown", submission_evidence={"stage": "exclusive_claim", "reason": "Another submitter claimed this attempt."}) from None
+    mutation_started = False
+    def mutation():
+        nonlocal mutation_started
+        mutation_started = True
     try:
         if provider_id == "kaggle":
             slug = intent["kernel"].split("/")[1]
@@ -703,37 +873,62 @@ def submit(provider_id, config, spec_path, job_dir, intent=None):
                             dataset_sources=[], competition_sources=[], kernel_sources=[])
             _json_write(stage / "kernel-metadata.json", metadata)
             (stage / "train.py").write_text(_embedded(stage), encoding="utf-8")
+            mutation()
             _cli("kaggle", ["kernels", "push", "-p", str(stage), "--timeout", str(intent["timeout_seconds"]),
                             "--accelerator", "NvidiaTeslaT4"], timeout=120)
             handle = dict(**intent, state="queued", dashboard_url=f"https://www.kaggle.com/code/{intent['kernel']}")
         elif provider_id == "modal":
-            handle = _submit_modal(config, spec, stage, intent)
+            handle = _submit_modal(config, spec, stage, intent, on_mutation=mutation)
         elif provider_id == "lightning":
-            handle = _submit_lightning(config, stage, intent)
+            handle = _submit_lightning(config, stage, intent, on_mutation=mutation)
         else:
             log = (job_dir / "training.log").open("w", encoding="utf-8")
             try:
-                child = subprocess.Popen([sys.executable, str((stage / "run.py").resolve())], cwd=job_dir, stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    child = subprocess.Popen([sys.executable, str((stage / "run.py").resolve())], cwd=job_dir, stdout=log, stderr=subprocess.STDOUT)
+                except OSError:
+                    # Popen reports an OS-level failure before creating the child.
+                    raise ConnectorError("The operating system could not start the local worker.", code="worker_start_failed", submission_outcome="not_started") from None
+                mutation()
             finally:
                 log.close()
             handle = dict(**intent, pid=child.pid, state="running")
         handle["submission_status"] = "confirmed"
-        _json_write(record, {**intent, "submission_status": "confirmed", "handle": handle})
+        handle["submission_evidence"] = {"outcome": "confirmed", "stage": "provider_acknowledgment", "attempt_id": intent["attempt_id"]}
+        try:
+            _json_write(record, {**intent, "submission_status": "confirmed", "handle": handle})
+        except OSError:
+            # The provider already returned its exact identity. Preserve it for
+            # the service to persist, even if this redundant journal is full.
+            handle["journal_warning"] = "The provider acknowledged this attempt, but its local submission journal could not be updated."
         return handle
     except Exception as exc:
-        if isinstance(exc, ConnectorError) and exc.code == "preflight_failed":
-            _json_write(record, {**intent, "submission_status": "not_submitted"})
-            raise
-        _json_write(record, {**intent, "submission_status": "unknown"})
-        if isinstance(exc, ConnectorError) and exc.code == "submission_unknown":
-            raise
-        raise ConnectorError("Submission acknowledgment was not saved. The provider may have started this attempt; reconnect before retrying. " + (str(exc) if isinstance(exc, ConnectorError) else f"Provider failure: {type(exc).__name__}."), code="submission_unknown", intent=intent) from None
+        proven = isinstance(exc, ConnectorError) and exc.submission_outcome == "not_started"
+        outcome = "not_started" if proven or not mutation_started else "unknown"
+        evidence = {"outcome": outcome, "stage": "provider_mutation" if mutation_started else "local_preparation", "attempt_id": intent["attempt_id"],
+                    "reason": "No launch was dispatched." if outcome == "not_started" else "A provider mutation was attempted without a complete acknowledgment."}
+        if isinstance(exc, ConnectorError) and exc.submission_evidence:
+            evidence.update(exc.submission_evidence)
+        try:
+            _json_write(record, {**intent, "submission_status": outcome, "submission_evidence": evidence})
+        except OSError:
+            pass  # Preserve the original outcome/evidence even on a full drive.
+        if outcome == "not_started":
+            if isinstance(exc, ConnectorError):
+                exc.submission_outcome, exc.submission_evidence, exc.intent = outcome, evidence, intent
+                raise
+            raise ConnectorError(f"Local submission preparation failed ({type(exc).__name__}); no provider launch was attempted.", code="preflight_failed", intent=intent,
+                                 submission_outcome=outcome, submission_evidence=evidence) from None
+        raise ConnectorError("Submission acknowledgment was not saved. The provider may have started this attempt; reconnect before retrying. " + (str(exc) if isinstance(exc, ConnectorError) else f"Provider failure: {type(exc).__name__}."), code="submission_unknown", intent=intent,
+                             submission_outcome="unknown", submission_evidence=evidence,
+                             diagnostic=exc.diagnostic if isinstance(exc, ConnectorError) else None) from None
 
 
-def _submit_modal(config, spec, stage, intent):
+def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
     modal = _sdk("modal", "modal")
     name = intent["volume"]
     environment = intent.get("environment", "main")
+    on_mutation()
     control = modal.Dict.from_name(intent["control"], create_if_missing=True, environment_name=environment)
     if not control.put("submission_claimed", intent["attempt_id"], skip_if_exists=True):
         raise ConnectorError("Modal already has this submission claim. Reconnect instead of starting another function.", code="submission_unknown", intent=intent)
@@ -798,15 +993,17 @@ def _submit_modal(config, spec, stage, intent):
             control.put("handle", handle)
             return handle
     except Exception as exc:
-        raise ConnectorError(f"Modal submission was not acknowledged ({type(exc).__name__}). Reconnect using this attempt's control record; a function may be running.", code="submission_unknown", intent=intent) from None
+        diagnostic = exc.diagnostic if isinstance(exc, ConnectorError) else _provider_error("Modal", exc, "submission").diagnostic
+        raise ConnectorError(f"Modal submission was not acknowledged ({type(exc).__name__}). Reconnect using this attempt's control record; a function may be running.", code="submission_unknown", intent=intent,
+                             diagnostic=diagnostic, submission_outcome="unknown") from None
 
 
 def _lightning_consent(config):
     if config.get("dedicated_studio") is not True or config.get("stop_studio_after_run") is not True:
-        raise ConnectorError("Lightning automatic execution requires a dedicated Studio and explicit permission to stop it after artifact collection. Shared Studios must use the guided bundle.")
+        raise ConnectorError("Lightning automatic execution requires a dedicated Studio and explicit permission to stop it after artifact collection. Use the in-app notebook guide for a shared Studio.")
 
 
-def _submit_lightning(config, stage, intent=None):
+def _submit_lightning(config, stage, intent=None, on_mutation=lambda: None):
     _lightning_consent(config)
     if intent is None:
         raise ConnectorError("Prepare a durable Lightning submission identity before starting its Studio.")
@@ -818,6 +1015,7 @@ def _submit_lightning(config, stage, intent=None):
     runner.write_text(_embedded(stage), encoding="utf-8")
     launch_attempted = False
     try:
+        on_mutation()
         if "running" not in str(studio.status).lower():
             if config.get("start_studio") is not True:
                 raise ConnectorError("Authorize starting the dedicated Lightning Studio before launching.")
@@ -859,7 +1057,9 @@ def _submit_lightning(config, stage, intent=None):
             detail = str(exc) if isinstance(exc, ConnectorError) else f"Provider setup failed ({type(exc).__name__})."
             raise ConnectorError("No Lightning training process was submitted. " + detail +
                                  (" The dedicated Studio was stopped." if intent["cleanup_status"] == "verified" else " Stop the dedicated Studio in its console to prevent continuing compute charges."),
-                                 code="preflight_failed", intent=intent) from None
+                                 code="preflight_failed", intent=intent, submission_outcome="not_started",
+                                 submission_evidence={"stage": "lightning_setup", "reason": "The training launcher was never invoked.", "cleanup_status": intent.get("cleanup_status", "failed")},
+                                 diagnostic=exc.diagnostic if isinstance(exc, ConnectorError) else None) from None
         if isinstance(exc, ConnectorError):
             raise
         raise _provider_error("Lightning", exc, "submission") from None
@@ -960,6 +1160,98 @@ def _kaggle_state(output):
     value = match.group(1).lower() if match else output.strip().lower()
     return {"complete": "completed", "completed": "completed", "error": "error", "failed": "error",
             "cancelled": "cancelled", "canceled": "cancelled", "running": "running", "queued": "queued", "pending": "queued"}.get(value, "unknown")
+
+
+def _attach_refused(detail):
+    return ConnectorError(detail + " No execution was attached. Inspect the saved attempt in the provider console.",
+                          code="attach_unverified", submission_outcome="unknown")
+
+
+def _matching_attempt(saved, expected, keys):
+    return isinstance(saved, dict) and all(saved.get(key) == expected.get(key) for key in keys)
+
+
+def attach(provider_id, config, execution_id, intent, job_dir):
+    """Attach only an independently observed run belonging to this saved attempt.
+
+    Provider operations here are lookups/reads only: no resource creation, start,
+    upload, pause or cancellation. An ID entered by a user is never itself proof.
+    """
+    _check_config(config)
+    if (provider_id not in {"kaggle", "modal", "lightning"} or not isinstance(intent, dict) or intent.get("provider") != provider_id
+            or not isinstance(intent.get("identity"), dict) or not re.fullmatch(r"[a-f0-9]{64}", str(intent.get("spec_sha256", "")))):
+        raise _attach_refused("This provider has no attachable saved submission identity.")
+    try:
+        record = _record_path(intent, job_dir)
+        saved = json.loads(record.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict):
+            raise ValueError("Invalid saved journal")
+        saved = saved.get("handle") or saved
+    except (OSError, ValueError, TypeError, ConnectorError):
+        raise _attach_refused("A readable launch journal for this exact attempt is required.") from None
+    bound_keys = ("provider", "attempt_id", "job_id", "spec_sha256", "identity")
+    if not _matching_attempt(saved, intent, bound_keys) or not intent.get("identity"):
+        raise _attach_refused("The supplied identity differs from this attempt's saved launch journal.")
+    handle = dict(intent)  # Never accept arbitrary submitted handle fields.
+    config = _bound_config(config, handle)
+    requested = str(execution_id or "").strip()
+    if not requested or len(requested) > 2048:
+        raise _attach_refused("Enter this attempt's provider execution ID.")
+    try:
+        if provider_id == "kaggle":
+            kernel = handle.get("kernel", "")
+            expected = handle["identity"].get("username", "") + "/multigpu-" + handle["attempt_id"][:20]
+            if kernel != expected or saved.get("kernel") != kernel:
+                raise _attach_refused("The saved Kaggle notebook does not match this account and attempt.")
+            if "://" in requested:
+                parsed = urlsplit(requested)
+                if parsed.scheme != "https" or parsed.hostname not in {"kaggle.com", "www.kaggle.com"} or parsed.username or parsed.password or parsed.port not in (None, 443):
+                    raise _attach_refused("Use the saved notebook ID or its official Kaggle HTTPS URL.")
+                match = re.fullmatch(r"/code/([A-Za-z0-9_-]+/[A-Za-z0-9_-]+)/?", parsed.path)
+                requested = match.group(1) if match else ""
+            if requested.casefold() != kernel.casefold():
+                raise _attach_refused("A different Kaggle notebook cannot be attached to this training attempt.")
+            _kaggle_identity({**config, "username": handle["identity"]["username"]})
+        elif provider_id == "modal":
+            if not re.fullmatch(r"fc-[A-Za-z0-9-]+", requested):
+                raise _attach_refused("Enter the Modal function call ID from this attempt's control record.")
+            _modal_identity(config, handle)
+            if not handle.get("control") or not _matching_attempt(saved, handle, ("control", "volume", "environment", "app_name")):
+                raise _attach_refused("The saved Modal control identity is incomplete or changed.")
+            modal = _sdk("modal", "modal")
+            control = modal.Dict.from_name(handle["control"], environment_name=handle.get("environment", "main"))
+            recovered = control.get("handle", None)
+            if (not _matching_attempt(recovered, handle, (*bound_keys, "control", "volume", "environment", "app_name"))
+                    or recovered.get("call_id") != requested):
+                raise _attach_refused("Modal's read-only control record does not bind this call to the saved attempt.")
+            handle.update(call_id=requested, app_id=recovered.get("app_id"))
+        else:
+            remote = "multigpu-runs/" + handle["attempt_id"]
+            if handle.get("remote_dir") != remote or saved.get("remote_dir") != remote:
+                raise _attach_refused("Lightning's saved run directory does not match this attempt.")
+            studio = _studio(config)
+            identity = _lightning_identity(config, studio)
+            if not _matching_attempt(identity, handle["identity"], ("owner", "owner_type", "teamspace", "studio")):
+                raise _attach_refused("The selected Lightning Studio differs from this attempt's saved account and Studio.")
+            if "running" not in str(studio.status).lower():
+                raise _attach_refused("The dedicated Studio must already be running to read its persistent launch record; attachment never starts it.")
+            code = f"from pathlib import Path; p=Path({remote!r})/'launch.json'; print(p.read_text() if p.exists() else '{{}}')"
+            recovered = json.loads(studio.run("python3 -c " + shlex.quote(code)).strip().splitlines()[-1])
+            pid = recovered.get("pid")
+            if recovered.get("attempt_id") != handle["attempt_id"] or type(pid) is not int or pid <= 0 or requested not in {str(pid), remote}:
+                raise _attach_refused("Lightning's persistent launch record does not bind this PID or run directory to the saved attempt.")
+            handle.update(pid=pid, studio_stopped=False)
+        state = poll(provider_id, config, handle, job_dir)
+        if state.get("state") == "unknown":
+            raise _attach_refused("The provider could not confirm this execution's current state.")
+        handle.update(submission_status="confirmed", submission_evidence={"outcome": "confirmed", "stage": "read_only_attach", "attempt_id": handle["attempt_id"]})
+        return {**state, "handle": handle, "submission_status": "confirmed", "connection_status": "connected"}
+    except ConnectorError:
+        raise
+    except (ValueError, IndexError, KeyError, TypeError):
+        raise _attach_refused("The provider returned no valid identity for this attempt.") from None
+    except Exception as exc:
+        raise _provider_error(provider_id, exc, "attachment lookup") from None
 
 
 def reconcile(provider_id, config, value, job_dir):

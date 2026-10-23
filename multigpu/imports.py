@@ -10,7 +10,20 @@ import uuid
 import zipfile
 
 from .artifacts import (IntegrityError, _check_path, atomic_bytes, checkpoint_assets, directory,
-                        export_artifacts, load_checkpoint, validate_checkpoint_payload, verify_export)
+                        export_artifacts, load_checkpoint, decode_checkpoint, validate_checkpoint_payload, verify_export)
+
+
+def frozen_dataset(job):
+    """Use recorded input identity for delivery; resuming still reads actual inputs."""
+    saved = job.get("input_snapshot") or {}
+    report = job.get("plan", {}).get("preflight", {})
+    fingerprint = job.get("fingerprint")
+    metadata = saved.get("metadata") if saved.get("fingerprint") == fingerprint else None
+    if not metadata and report.get("fingerprint") == fingerprint:
+        metadata = report.get("dataset")
+    if not fingerprint or not metadata:
+        return None
+    return {"fingerprint": fingerprint, "metadata": metadata, "content_hash": metadata.get("sha256"), "frozen_metadata": True}
 
 
 def _safe_parts(name):
@@ -74,7 +87,11 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
             if len({hashlib.sha256(p.read_bytes()).hexdigest() for p in checkpoint_candidates}) != 1:
                 raise IntegrityError("Results contain different checkpoints. Select one session's output folder.")
         checkpoint = checkpoint_candidates[0] if checkpoint_candidates else None
-        state = load_checkpoint(checkpoint) if checkpoint else None
+        checkpoint_bytes = None
+        if checkpoint:
+            with checkpoint.open("rb") as handle:
+                checkpoint_bytes = handle.read(64 * 1024 * 1024 + 1)
+        state = decode_checkpoint(checkpoint_bytes) if checkpoint_bytes is not None else None
         if not manifests and state is None:
             raise IntegrityError("No verified MultiGPU model export or checkpoint was found.")
         spec = job["spec"]
@@ -82,8 +99,13 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
             raise IntegrityError("The checkpoint does not match this run's recipe and target.")
         if state and not 0 <= state.get("step", -1) <= spec["steps"]:
             raise IntegrityError("The checkpoint reports an invalid training step.")
+        manifest = verify_export(manifests[0].parent) if manifests else None
         from .datasets import load_dataset
-        data = load_dataset(spec)
+        # Completed outputs carry their input identity; source data is only needed
+        # for checkpoint-only recovery or older runs without recorded metadata.
+        data = frozen_dataset(job) if manifest else None
+        if data is None:
+            data = load_dataset(spec)
         expected_fingerprint = job.get("fingerprint") or data["fingerprint"]
         if data["fingerprint"] != expected_fingerprint:
             raise IntegrityError("Training inputs changed since this run was planned. Current recovery data was preserved.")
@@ -92,7 +114,6 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
         if state:
             validate_checkpoint_payload(state, spec, data)
         assets = checkpoint_assets(state, checkpoint.parent) if state else {}
-        manifest = verify_export(manifests[0].parent) if manifests else None
         if manifest:
             metadata = manifest.get("metadata", {})
             if metadata.get("job_id") != job["id"] or metadata.get("recipe") != spec["recipe"]:
@@ -103,14 +124,18 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
                 raise IntegrityError("Model export and checkpoint progress do not match this run.")
         step = state.get("step", 0) if state else manifest["metadata"].get("step", 0)
         current = job_dir / "checkpoint.json"
-        current_hash = hashlib.sha256(current.read_bytes()).hexdigest() if current.exists() else None
+        current_bytes = None
+        if current.exists():
+            with current.open("rb") as handle:
+                current_bytes = handle.read(64 * 1024 * 1024 + 1)
+        current_hash = hashlib.sha256(current_bytes).hexdigest() if current_bytes is not None else None
         current_step = job.get("step", 0)
         if current.exists():
             try:
-                current_step = max(current_step, load_checkpoint(current)["step"])
+                current_step = max(current_step, decode_checkpoint(current_bytes)["step"])
             except (IntegrityError, OSError):
                 pass
-        digest_data = {"job": job["id"], "current": current_hash, "checkpoint": hashlib.sha256(checkpoint.read_bytes()).hexdigest() if checkpoint else None, "manifest": manifest, "step": step}
+        digest_data = {"job": job["id"], "current": current_hash, "checkpoint": hashlib.sha256(checkpoint_bytes).hexdigest() if checkpoint_bytes is not None else None, "manifest": manifest, "step": step}
         digest = hashlib.sha256(json.dumps(digest_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
         if preview_only:
             return {"preview_digest": digest, "step": step, "current_step": current_step, "rollback_required": step < current_step, "status": "completed" if manifest else "paused", "verified": True}
@@ -134,14 +159,14 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
                     atomic_bytes(target, contents)
             if current.exists():
                 try:
-                    previous_state = load_checkpoint(current)
+                    previous_state = decode_checkpoint(current_bytes)
                     validate_checkpoint_payload(previous_state, spec, data)
                     if previous_state.get("job_id") != job["id"] or previous_state.get("fingerprint") != expected_fingerprint:
                         raise IntegrityError("Existing checkpoint belongs to a different run")
-                    atomic_bytes(job_dir / "checkpoint.previous.json", current.read_bytes())
+                    atomic_bytes(job_dir / "checkpoint.previous.json", current_bytes)
                 except IntegrityError:
-                    atomic_bytes(job_dir / ("checkpoint.replaced-" + uuid.uuid4().hex + ".json"), current.read_bytes())
-            atomic_bytes(job_dir / "checkpoint.json", checkpoint.read_bytes())
+                    atomic_bytes(job_dir / ("checkpoint.replaced-" + uuid.uuid4().hex + ".json"), current_bytes)
+            atomic_bytes(job_dir / "checkpoint.json", checkpoint_bytes)
         return {"status": "completed" if manifest else "paused", "step": step,
                 "loss": state.get("loss") if state else manifest["metadata"].get("loss"),
                 "device": state.get("device") if state else manifest["metadata"].get("device"),

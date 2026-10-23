@@ -69,10 +69,15 @@ def _image_predict(folder: Path, model: dict, image_path: str) -> dict:
 def predict(export_dir: Path, inputs: dict) -> dict:
     folder = Path(export_dir)
     manifest = verify_export(folder)
+    capability = inference_capability(folder, manifest)
+    if not capability["supported"]:
+        raise ValueError(capability["reason"])
     included = {item["path"] for item in manifest["files"]}
     if "model.json" not in included:
         raise ValueError("This export has no built-in prediction adapter")
     model = json.loads((folder / "model.json").read_text(encoding="utf-8"))
+    if not isinstance(model, dict):
+        raise ValueError("Custom model exports use their own prediction adapter; see the script's inference instructions")
     if model.get("format") == "multigpu-image-resnet18-v1":
         if model.get("base_weights") not in included:
             raise ValueError("Image model's verified base weights are missing")
@@ -100,6 +105,59 @@ def predict(export_dir: Path, inputs: dict) -> dict:
 
 
 predict_model = predict
+
+
+def inference_capability(export_dir: Path, manifest=None) -> dict:
+    """Describe the UI affordance; prediction still verifies all artifact hashes."""
+    unsupported = {"supported": False, "kind": None, "features": [], "classes": [],
+                   "reason": "This export uses its own inference instructions; built-in prediction is unavailable."}
+    def number(value):
+        return type(value) in (int, float) and math.isfinite(value)
+    def vector(value, count):
+        return isinstance(value, list) and len(value) == count and all(number(item) for item in value)
+    def matrix(value, rows, columns):
+        return isinstance(value, list) and len(value) == rows and all(vector(row, columns) for row in value)
+    try:
+        folder = Path(export_dir)
+        manifest = manifest or json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        included = {item["path"] for item in manifest["files"]}
+        if "model.json" not in included or (folder / "model.json").stat().st_size > 16 * 1024 * 1024:
+            return unsupported
+        model = json.loads((folder / "model.json").read_text(encoding="utf-8"))
+        if not isinstance(model, dict):
+            return unsupported
+        fmt = model.get("format")
+        if fmt == "multigpu-image-resnet18-v1" and model.get("base_weights") in included:
+            classes, head = model.get("classes"), model.get("head", {})
+            if not isinstance(classes, list) or not 2 <= len(classes) <= 50000 or not all(isinstance(name, str) for name in classes):
+                return unsupported
+            if not isinstance(head, dict) or not matrix(head.get("weight"), len(classes), 512) or not vector(head.get("bias"), len(classes)):
+                return unsupported
+            return {"supported": True, "kind": "image", "features": [], "classes": classes, "reason": ""}
+        if fmt in ("multigpu-linear-binary-v1", "multigpu-pytorch-mlp-v1"):
+            schema = json.loads((folder / "input_schema.json").read_text(encoding="utf-8")) if "input_schema.json" in included else {}
+            if not isinstance(schema, dict):
+                return unsupported
+            count = len(model.get("weights", [])) if fmt == "multigpu-linear-binary-v1" else model.get("architecture", {}).get("features", 0)
+            if type(count) is not int or not 0 < count <= 1000000:
+                return unsupported
+            if fmt == "multigpu-linear-binary-v1":
+                if not vector(model.get("weights"), count) or not number(model.get("bias")):
+                    return unsupported
+            else:
+                tensors = model.get("model", {})
+                if not isinstance(tensors, dict) or not matrix(tensors.get("0.weight"), 16, count) or not vector(tensors.get("0.bias"), 16) or not matrix(tensors.get("2.weight"), 1, 16) or not vector(tensors.get("2.bias"), 1):
+                    return unsupported
+            transform = model.get("standardization")
+            if transform and (not isinstance(transform, dict) or not vector(transform.get("mean"), count) or not vector(transform.get("std"), count) or not all(value > 0 for value in transform["std"])):
+                return unsupported
+            features = schema.get("features", [])
+            if not isinstance(features, list) or (features and (len(features) != count or not all(isinstance(name, str) for name in features) or len(set(features)) != count)):
+                return unsupported
+            return {"supported": True, "kind": "tabular", "features": features, "feature_count": count, "classes": [0, 1], "reason": ""}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, OverflowError):
+        return {**unsupported, "reason": "The saved export needs verification before prediction."}
+    return unsupported
 
 
 def inference_files() -> dict:

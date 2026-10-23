@@ -88,7 +88,7 @@ const path = require('node:path');
     await page.waitForFunction(()=>document.querySelector('.job-title-row .pill')?.textContent.trim()==='Completed',{timeout:30000});
     await page.locator('.chart').waitFor();
     await page.getByRole('heading',{name:'Try a prediction',exact:true}).waitFor();
-    await page.getByLabel('Numeric features, in dataset column order').fill('0.1, 0.2, 0.3, 0.4');
+    const featureInputs=page.locator('[data-feature-name]');if(await featureInputs.count()){for(let i=0;i<await featureInputs.count();i++)await featureInputs.nth(i).fill(String([0.1, 0.2, 0.3, 0.4][i%4]));}else await page.getByLabel('Numeric features, in dataset column order').fill('0.1,0.2,0.3,0.4');
     await page.getByRole('button',{name:'Run prediction',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('#prediction-result')?.textContent.includes('Model confidence'));
     await page.getByText('Advanced prediction details',{exact:true}).click();

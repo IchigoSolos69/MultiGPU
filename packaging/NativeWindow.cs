@@ -16,13 +16,23 @@ namespace MultiGPU {
         private static extern IntPtr LoadLibrary(string path);
         [DllImport("shell32", CharSet=CharSet.Unicode)]
         private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
-        private readonly Uri origin;
-        private readonly string statePath, acceptanceDirectory;
+        private Uri origin;
+        private readonly string statePath, acceptanceDirectory, userDataFolder;
         private readonly bool startVisible;
-        private readonly WebView2 view;
+        private WebView2 view;
+        private Panel recovery;
+        private Label recoveryMessage;
+        private bool initializing, shown;
+        private int viewGeneration;
+        private readonly HashSet<ulong> cancelledNavigations=new HashSet<ulong>();
+        private Timer acceptanceExitTimer;
+        public event EventHandler ReconnectRequested;
+        public event EventHandler ExitRequested;
+        public event EventHandler DiagnosticsRequested;
         private readonly JavaScriptSerializer json = new JavaScriptSerializer();
         private bool acceptanceStarted, loaded;
         private string error, externalUri, downloadPath, downloadState;
+        private string permission, diagnostic;
         private int blocked, external;
         public bool AllowExit { get; set; }
 
@@ -45,18 +55,34 @@ namespace MultiGPU {
         public NativeWindow(string address, string userDataFolder, string iconPath, string stateFile, bool visible, string acceptanceRoot) {
             if (!LocalUri(address, address)) throw new ArgumentException("The desktop window requires the controller's exact loopback address.");
             SetCurrentProcessExplicitAppUserModelID("MultiGPU.Desktop");
-            origin = new Uri(address); statePath = stateFile; startVisible = visible; acceptanceDirectory = String.IsNullOrWhiteSpace(acceptanceRoot)?null:Path.GetFullPath(acceptanceRoot);
+            origin = new Uri(address); statePath = stateFile; startVisible = visible; this.userDataFolder=userDataFolder; acceptanceDirectory = String.IsNullOrWhiteSpace(acceptanceRoot)?null:Path.GetFullPath(acceptanceRoot);
             Text = "MultiGPU"; MinimumSize = new Size(900, 640); Size = new Size(1360, 900);
             StartPosition = FormStartPosition.CenterScreen; BackColor = Color.FromArgb(238,241,245);
             if (File.Exists(iconPath)) Icon = new Icon(iconPath);
-            view = new WebView2(); view.Dock = DockStyle.Fill;
-            view.CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = userDataFolder };
-            Controls.Add(view);
+            recovery=new Panel { Dock=DockStyle.Fill, BackColor=BackColor, Visible=false, Padding=new Padding(40) };
+            var content=new FlowLayoutPanel { Dock=DockStyle.Fill, FlowDirection=FlowDirection.TopDown, WrapContents=false, AutoScroll=true };
+            recoveryMessage=new Label { AutoSize=true, MaximumSize=new Size(760,0), Font=new Font("Segoe UI",12), Margin=new Padding(0,0,0,24) };
+            content.Controls.Add(recoveryMessage);
+            var reload=new Button { Text="Reload interface", AutoSize=true }; reload.Click+=async delegate { await InitializeView(); }; content.Controls.Add(reload);
+            var reconnect=new Button { Text="Reconnect controller", AutoSize=true }; reconnect.Click+=delegate { if(ReconnectRequested!=null) ReconnectRequested(this,EventArgs.Empty); }; content.Controls.Add(reconnect);
+            var diagnostics=new Button { Text="Open workspace diagnostics", AutoSize=true }; diagnostics.Click+=delegate { if(DiagnosticsRequested!=null) DiagnosticsRequested(this,EventArgs.Empty); }; content.Controls.Add(diagnostics);
+            var exit=new Button { Text="Exit MultiGPU", AutoSize=true }; exit.Click+=delegate { if(ExitRequested!=null) ExitRequested(this,EventArgs.Empty); }; content.Controls.Add(exit);
+            recovery.Controls.Add(content); Controls.Add(recovery);
         }
         protected override async void OnShown(EventArgs e) {
             base.OnShown(e);
+            if(shown) return; shown=true;
             if (!startVisible) { Hide(); ShowInTaskbar = false; }
+            await InitializeView();
+        }
+        private async Task InitializeView() {
+            if(initializing || IsDisposed) return;
+            initializing=true; loaded=false;
+            int generation=++viewGeneration;
             try {
+                if(view!=null) { Controls.Remove(view); view.Dispose(); }
+                view=new WebView2 { Dock=DockStyle.Fill, CreationProperties=new CoreWebView2CreationProperties { UserDataFolder=userDataFolder } };
+                Controls.Add(view); recovery.BringToFront();
                 await view.EnsureCoreWebView2Async(null);
                 var core = view.CoreWebView2;
                 core.Settings.AreHostObjectsAllowed = false;
@@ -66,7 +92,7 @@ namespace MultiGPU {
                 core.Settings.AreBrowserAcceleratorKeysEnabled = false;
                 core.Settings.IsStatusBarEnabled = false;
                 core.NavigationStarting += delegate(object sender, CoreWebView2NavigationStartingEventArgs args) {
-                    if (!LocalUri(args.Uri, origin.AbsoluteUri)) { args.Cancel = true; blocked++; if (args.IsUserInitiated) OpenExternal(args.Uri); SaveState(); }
+                    if (!LocalUri(args.Uri, origin.AbsoluteUri)) { args.Cancel = true; cancelledNavigations.Add(args.NavigationId); blocked++; if (args.IsUserInitiated) OpenExternal(args.Uri); SaveState(); }
                 };
                 core.FrameNavigationStarting += delegate(object sender, CoreWebView2NavigationStartingEventArgs args) {
                     if (!LocalUri(args.Uri, origin.AbsoluteUri)) { args.Cancel = true; blocked++; SaveState(); }
@@ -77,22 +103,42 @@ namespace MultiGPU {
                     else if (args.IsUserInitiated) OpenExternal(args.Uri);
                     else { blocked++; SaveState(); }
                 };
-                core.PermissionRequested += delegate(object sender, CoreWebView2PermissionRequestedEventArgs args) { args.State = CoreWebView2PermissionState.Deny; };
+                core.PermissionRequested += delegate(object sender, CoreWebView2PermissionRequestedEventArgs args) {
+                    permission=args.PermissionKind.ToString();
+                    // Every accepted download still receives its own native Save dialog.
+                    args.State=LocalUri(args.Uri,origin.AbsoluteUri) && permission=="MultipleAutomaticDownloads" ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+                    SaveState();
+                };
+                if(acceptanceDirectory!=null) {
+                    await core.CallDevToolsProtocolMethodAsync("Log.enable","{}");
+                    core.GetDevToolsProtocolEventReceiver("Log.entryAdded").DevToolsProtocolEventReceived += delegate(object sender,CoreWebView2DevToolsProtocolEventReceivedEventArgs args) {diagnostic=args.ParameterObjectAsJson;SaveState();};
+                }
                 core.LaunchingExternalUriScheme += delegate(object sender, CoreWebView2LaunchingExternalUriSchemeEventArgs args) { args.Cancel = true; blocked++; SaveState(); };
                 core.DownloadStarting += Download;
                 core.NavigationCompleted += delegate(object sender, CoreWebView2NavigationCompletedEventArgs args) {
+                    if(generation!=viewGeneration) return;
+                    if(cancelledNavigations.Remove(args.NavigationId)) return;
                     if (args.IsSuccess && LocalUri(core.Source, origin.AbsoluteUri)) {
-                        loaded = true; SaveState();
+                        loaded = true; error=null; recovery.Visible=false; SaveState();
                         if (acceptanceDirectory != null && !acceptanceStarted) { acceptanceStarted = true; RunAcceptance(); }
-                    }
+                    } else if(!args.IsSuccess && args.WebErrorStatus.ToString()!="OperationCanceled") ShowRecovery("The local interface could not load. Reconnect to the controller, or reload the interface. Saved jobs are kept; remote compute may still be running.");
                 };
-                core.ProcessFailed += delegate { error = "The embedded browser stopped. Reopen MultiGPU; the controller keeps its saved runs."; SaveState(); };
-                core.Navigate(origin.AbsoluteUri);
+                core.ProcessFailed += delegate(object sender, CoreWebView2ProcessFailedEventArgs args) {
+                    string kind=args.ProcessFailedKind.ToString();
+                    if(kind=="BrowserProcessExited" || kind=="RenderProcessExited" || kind=="RenderProcessUnresponsive")
+                        BeginInvoke(new Action(delegate { if(generation==viewGeneration && !IsDisposed) ShowRecovery("The embedded browser stopped responding. Reload the interface to reconnect. The controller and saved jobs are independent of this window."); }));
+                };
+                core.Navigate(origin.GetLeftPart(UriPartial.Authority)+"/?desktop=1");
             } catch (Exception ex) {
-                error = "The native window could not initialize (" + ex.GetType().Name + "). Install or repair Microsoft Edge WebView2 Runtime and reopen MultiGPU.";
-                var message = new Label { Text=error, Dock=DockStyle.Fill, TextAlign=ContentAlignment.MiddleCenter, Padding=new Padding(30), Font=new Font("Segoe UI", 12) };
-                Controls.Add(message); message.BringToFront(); SaveState();
-            }
+                ShowRecovery("The native interface could not initialize ("+ex.GetType().Name+"). Retry Reload interface, or repair Microsoft Edge WebView2 Runtime. Saved jobs are kept.");
+            } finally { initializing=false; }
+        }
+        public void ShowRecovery(string message) {
+            loaded=false; error=message; recoveryMessage.Text=message; recovery.Visible=true; recovery.BringToFront(); SaveState();
+        }
+        public async void Connect(string address) {
+            if(!LocalUri(address,address)) throw new ArgumentException("The controller requires a local address.");
+            origin=new Uri(address); await InitializeView();
         }
         protected override void OnFormClosing(FormClosingEventArgs e) {
             if (!AllowExit) { e.Cancel=true; Hide(); ShowInTaskbar=false; SaveState(); }
@@ -134,9 +180,9 @@ namespace MultiGPU {
         private void SaveState() {
             try {
                 var value=new Dictionary<string,object> { {"native_window",true},{"ready",loaded},{"visible",Visible},{"title",Text},
-                    {"source",view.CoreWebView2 == null ? null : view.CoreWebView2.Source},{"runtime_version",RuntimeVersion()},
+                    {"source",view==null || view.CoreWebView2 == null ? null : view.CoreWebView2.Source},{"runtime_version",RuntimeVersion()},{"recovery_visible",recovery.Visible},
                     {"blocked_navigations",blocked},{"external_routes",external},{"last_external_uri",externalUri},
-                    {"download_path",downloadPath},{"download_state",downloadState},{"error",error} };
+                    {"download_path",downloadPath},{"download_state",downloadState},{"permission",permission},{"diagnostic",diagnostic},{"error",error} };
                 File.WriteAllText(statePath+".tmp",json.Serialize(value));
                 if(File.Exists(statePath)) File.Delete(statePath);
                 File.Move(statePath+".tmp",statePath);
@@ -144,16 +190,30 @@ namespace MultiGPU {
         }
         private async Task DownloadAcceptance(string script, string expectedName) {
             downloadPath=null; downloadState=null;
-            await view.CoreWebView2.ExecuteScriptAsync(script);
+            await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",json.Serialize(new Dictionary<string,object>{{"expression",script},{"userGesture",true}}));
             DateTime deadline=DateTime.UtcNow.AddSeconds(10);
             while(downloadState!="Completed" && DateTime.UtcNow<deadline) await Task.Delay(100);
             if(downloadState!="Completed" || downloadPath==null || !File.Exists(downloadPath) || !Path.GetFileName(downloadPath).EndsWith(expectedName,StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Native download did not complete: "+expectedName+" ("+downloadState+")");
         }
+        private async Task WaitForReady() {
+            DateTime deadline=DateTime.UtcNow.AddSeconds(25);
+            while(!loaded && DateTime.UtcNow<deadline) await Task.Delay(100);
+            if(!loaded) throw new InvalidOperationException("Native recovery did not restore the interface: "+error);
+        }
+        private async Task StopAcceptanceController() {
+            string code="(async()=>{const b=await fetch('/api/bootstrap');const t=b.headers.get('X-MultiGPU-Token');const r=await fetch('/api/shutdown',{method:'POST',headers:{'Content-Type':'application/json','X-MultiGPU-Token':t},body:'{}'});if(!r.ok)throw Error('Shutdown rejected');return true})()";
+            await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",json.Serialize(new Dictionary<string,object>{{"expression",code},{"awaitPromise",true},{"returnByValue",true}}));
+            DateTime deadline=DateTime.UtcNow.AddSeconds(15);
+            while(!recovery.Visible && DateTime.UtcNow<deadline) await Task.Delay(100);
+            if(!recovery.Visible) throw new InvalidOperationException("Dead-controller recovery panel was not shown.");
+        }
         private async void RunAcceptance() {
             var result=new Dictionary<string,object>();
             try {
                 RestoreWindow(); view.Focus(); await Task.Delay(600);
+                if(await view.CoreWebView2.ExecuteScriptAsync("new URLSearchParams(location.search).get('desktop') === '1'")!="true") throw new InvalidOperationException("Native desktop marker was absent.");
+                result["native_desktop_marker"]=true;
                 string dom=await view.CoreWebView2.ExecuteScriptAsync("document.readyState === 'complete' && document.querySelector('main') !== null");
                 if(dom!="true") throw new InvalidOperationException("The application DOM did not render inside WebView2.");
                 await DownloadAcceptance("(()=>{const a=document.createElement('a');a.href='/static/styles.css';a.download='native-local-download.css';a.click()})()", "native-local-download.css");
@@ -179,23 +239,71 @@ namespace MultiGPU {
                 if(!notebook.ContainsKey("cells") || Convert.ToInt32(notebook["nbformat"])!=4) throw new InvalidOperationException("The downloaded notebook is invalid.");
                 result["training_notebook_download"]=true;
                 int before=blocked;
-                view.CoreWebView2.Navigate("https://example.com/native-navigation-must-be-blocked"); await Task.Delay(300);
-                view.CoreWebView2.Navigate("file:///C:/Windows/win.ini"); await Task.Delay(300);
+                view.CoreWebView2.Navigate("https://example.com/native-navigation-must-be-blocked"); await Task.Delay(700);
+                view.CoreWebView2.Navigate("file:///C:/Windows/win.ini"); await Task.Delay(700);
                 if(blocked<before+2 || !LocalUri(view.CoreWebView2.Source,origin.AbsoluteUri)) throw new InvalidOperationException("Off-origin navigation was not blocked.");
                 result["navigation_guard"]=true;
+                if(LocalUri("http://127.0.0.1:"+(origin.Port==65535?origin.Port-1:origin.Port+1)+"/",origin.AbsoluteUri)
+                    || LocalUri("javascript:alert(1)",origin.AbsoluteUri) || LocalUri("file:///C:/Windows/win.ini",origin.AbsoluteUri)
+                    || ExternalUri("file:///C:/Windows/win.ini") || ExternalUri("multigpu-untrusted://command")
+                    || !ExternalUri("https://modal.com/")) throw new InvalidOperationException("Origin policy edge cases failed.");
+                result["origin_policy_edges"]=true;
                 int prior=external;
                 await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate", "{\"expression\":\"window.open('https://modal.com/','_blank')\",\"userGesture\":true}"); await Task.Delay(300);
                 if(external!=prior+1 || externalUri!="https://modal.com/") throw new InvalidOperationException("Provider link did not route to the external browser handler.");
                 result["external_browser_routing"]=true;
                 await view.CoreWebView2.ExecuteScriptAsync("location.hash='#providers'"); await Task.Delay(350);
                 await view.CoreWebView2.ExecuteScriptAsync("document.querySelector('[data-action=\"provider\"][data-id=\"colab\"]')?.click()"); await Task.Delay(600);
-                using(var preview=File.Create(Path.Combine(acceptanceDirectory,"native-setup-window.png"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,preview);
                 Close(); if(Visible) throw new InvalidOperationException("Closing the native window did not hide it to the tray.");
                 RestoreWindow(); if(!Visible) throw new InvalidOperationException("The native window could not be restored.");
-                result["hide_restore"]=true; result["passed"]=true;
+                result["hide_restore"]=true;
+                using(var browser=Process.GetProcessById((int)view.CoreWebView2.BrowserProcessId)) { browser.Kill(); browser.WaitForExit(5000); }
+                DateTime recoveryDeadline=DateTime.UtcNow.AddSeconds(10);
+                while(!recovery.Visible && DateTime.UtcNow<recoveryDeadline) await Task.Delay(100);
+                if(!recovery.Visible) throw new InvalidOperationException("Browser failure had no native recovery panel.");
+                result["browser_failure_panel"]=true;
+                await InitializeView(); await WaitForReady();
+                result["browser_recreated"]=true;
+                await StopAcceptanceController(); result["dead_controller_panel"]=true;
+                if(ReconnectRequested==null) throw new InvalidOperationException("Native reconnect control is not wired.");
+                ReconnectRequested(this,EventArgs.Empty); await WaitForReady();
+                string saved=await view.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate",json.Serialize(new Dictionary<string,object>{{"expression","fetch('/api/jobs/"+jobId+"').then(r=>r.ok)"},{"awaitPromise",true},{"returnByValue",true}}));
+                var savedValue=(Dictionary<string,object>)json.DeserializeObject(saved);
+                var savedResult=(Dictionary<string,object>)savedValue["result"];
+                if(!savedResult.ContainsKey("value") || !(bool)savedResult["value"]) throw new InvalidOperationException("Saved run was lost after controller restart.");
+                result["controller_restart"]=true;
+                await view.CoreWebView2.ExecuteScriptAsync("location.hash='#providers'"); await Task.Delay(300);
+                await view.CoreWebView2.ExecuteScriptAsync("document.querySelector('[data-action=\"provider\"][data-id=\"colab\"]')?.click()"); await Task.Delay(400);
+                result["passed"]=true;
             } catch(Exception ex) { result["passed"]=false; result["error"]=ex.GetType().Name+": "+ex.Message; }
+            try { using(var preview=File.Create(Path.Combine(acceptanceDirectory,"native-setup-window.png"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png,preview); } catch { }
             result["runtime_version"]=RuntimeVersion(); result["source"]=view.CoreWebView2.Source;
-            Directory.CreateDirectory(acceptanceDirectory); File.WriteAllText(Path.Combine(acceptanceDirectory,"native-acceptance-result.json"),json.Serialize(result)); SaveState();
+            Directory.CreateDirectory(acceptanceDirectory); File.WriteAllText(Path.Combine(acceptanceDirectory,"native-acceptance-result.json"),json.Serialize(result));
+            if(result.ContainsKey("passed") && (bool)result["passed"]) {
+                Close();
+                acceptanceExitTimer=new Timer { Interval=250 };
+                acceptanceExitTimer.Tick+=async delegate {
+                    if(!Visible) return;
+                    acceptanceExitTimer.Stop();
+                    var exitResult=new Dictionary<string,object>();
+                    try {
+                        await StopAcceptanceController();
+                        if(ExitRequested==null) throw new InvalidOperationException("Native exit control is not wired.");
+                        exitResult["passed"]=true;
+                        File.WriteAllText(Path.Combine(acceptanceDirectory,"native-exit-result.json"),json.Serialize(exitResult));
+                        ExitRequested(this,EventArgs.Empty);
+                    } catch(Exception ex) {
+                        exitResult["passed"]=false; exitResult["error"]=ex.Message;
+                        File.WriteAllText(Path.Combine(acceptanceDirectory,"native-exit-result.json"),json.Serialize(exitResult));
+                    }
+                };
+                acceptanceExitTimer.Start();
+            }
+            SaveState();
+        }
+        protected override void Dispose(bool disposing) {
+            if(disposing && acceptanceExitTimer!=null) acceptanceExitTimer.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

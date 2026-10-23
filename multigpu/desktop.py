@@ -3,6 +3,28 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
+
+
+def provider_signin(provider_id):
+    if os.name != "nt":
+        raise ValueError("Native sign-in is available in the Windows app. Use the displayed command instead.")
+    if provider_id not in ("kaggle", "modal", "lightning"):
+        raise ValueError("Choose an automatic provider with a supported native sign-in.")
+    if sys.prefix == sys.base_prefix:
+        raise ValueError("Open the app from its managed environment before signing in.")
+    python = Path(sys.executable)
+    if provider_id == "modal":
+        command = [str(python), "-m", "modal", "setup"]
+    else:
+        client = python.parent / ("kaggle.exe" if provider_id == "kaggle" else "lightning.exe")
+        if not client.is_file():
+            raise ValueError("Prepare the provider tools in the app before signing in.")
+        command = [str(client), *(["auth", "login"] if provider_id == "kaggle" else ["login"])]
+    # Provider-owned interactive authentication stays in its own console/browser.
+    process = subprocess.Popen(command, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0), close_fds=True)
+    return {"started": True, "provider_id": provider_id, "pid": process.pid,
+            "message": "Finish sign-in in the provider window, then return to Save & check."}
 
 
 def select_path(kind="file", purpose="dataset"):

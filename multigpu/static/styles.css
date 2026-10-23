@@ -674,3 +674,17 @@ input,textarea{caret-color:var(--accent)}
 .guided-import h3{margin-bottom:10px}
 @media(max-width:760px){.setup-layout{grid-template-columns:1fr;gap:22px}.setup-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.setup-navigation button{font-size:12px;padding:9px 7px;line-height:1.5;min-height:52px}.setup-step-number{width:20px;height:20px}.setup-step-content{min-height:0}.setup-dialog .dialog-body{padding:18px}.setup-dialog .dialog-header{padding:20px 18px 16px}.setup-step-content>h3{font-size:18px}}
 @media(max-width:540px){.setup-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 24px);border-radius:9px}.setup-progress{flex-direction:column;gap:3px;font-size:12px;margin-bottom:16px}.setup-navigation{grid-template-columns:repeat(2,minmax(0,1fr))}.setup-navigation button{font-size:13px;min-height:44px;padding:8px}.setup-navigation small{font-size:12px}.setup-description,.setup-instructions{font-size:14px}.setup-controls{gap:10px}.setup-controls .button{min-height:42px;font-size:12px;padding:7px 10px}.setup-controls>.button-row{gap:9px}.setup-step-actions .button{min-height:44px;font-size:13px;white-space:normal}.setup-dialog .field input{min-height:44px;font-size:16px}.setup-observed .review-list>div{grid-template-columns:85px minmax(0,1fr);gap:10px}.guided-setup{padding:17px}.setup-ack{padding:12px}.setup-ack small{font-size:13px}}
+.task-options{grid-template-columns:repeat(3,minmax(0,1fr))}
+.draft-restore-note{font-size:13px;line-height:1.7;margin:-10px 0 20px;max-width:75ch}
+.job-attention{color:var(--warning);font-size:12px;line-height:1.6;display:block;margin-top:4px}
+#job-status{display:inline-flex}
+.field select,.field textarea{width:100%;min-width:0;min-height:36px;padding:8px 10px;border:1px solid var(--control-line);border-radius:5px;background:white;color:var(--ink);font:inherit}
+.field textarea{resize:vertical;line-height:1.7}
+#submission-resolution>summary,.unknown-observations>summary{cursor:pointer;font-weight:600;font-size:14px}
+.unknown-observations{margin-top:17px}
+.unknown-observations .job-stats{margin-top:15px}
+#resolution-confirm-row[hidden]{display:none!important}
+@media(max-width:1100px){.task-options{grid-template-columns:1fr}.task-option{padding:13px 14px}}
+@media(max-width:540px){.field select,.field textarea{font-size:16px;min-height:44px}.path-control{flex-wrap:wrap}.path-control>input{flex-basis:140px}.path-control>.button{min-height:44px}.draft-restore-note{font-size:13px}.job-attention{font-size:12px}}
+
+.skip-link:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap;padding:0}

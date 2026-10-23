@@ -2,6 +2,8 @@
 
 A local training workspace that uses your own compute accounts and saves verified models on your computer. The Windows-first journey supports **tabular binary classification**, **image classification**, and trusted custom Python training.
 
+Version **0.4.0** improves the complete training journey: consistent reviewed launches, explicit stuck-attempt recovery, cancellable setup, native Windows recovery and verified model delivery after inputs move.
+
 ## Start
 
 On Windows, install the Windows release and open **MultiGPU** from the Start menu, or double-click `start.cmd` in a source checkout. MultiGPU opens in its own Windows window with a tray icon. Closing the window keeps training running in the tray; use **Pause training and exit** to stop the controller. `./start.ps1` remains available for terminal/browser development.
@@ -37,6 +39,8 @@ follow the native sign-in instructions, and check the account. Back and Continue
 save your place. The app distinguishes steps you acknowledge from readiness it
 can actually verify. A checked instruction never grants compute access or proves
 free allowance, billing limits or a working GPU.
+
+Supported native clients have a **Sign in** button that opens their own console/browser; copying the exact command remains available. Account verification stays separate from remaining quota, so an exhausted allowance does not ask you to sign in again. Setup tasks and their logs survive interface reload; cancel an installation before quitting, then prepare again if repair is required. Windows owns installer process trees so a crashed controller does not leave an installer running unnoticed.
 
 For assisted providers, creating a run opens its setup guide without downloading
 an instruction archive. The guide explains how to open the provider notebook,
@@ -103,6 +107,10 @@ Native authentication and dependency installation must target the application's 
 
 ## Interruption, notebooks and recovery
 
+An uncertain launch stays reserved until its saved identity can be reconciled. **Resolve provider launch** can attach a provider-verified execution or record your explicit confirmation that you checked the provider console and stopped the attempt or verified it absent. This is labelled user-confirmed, retains the original evidence, and never retries automatically. For an unresolved Lightning Studio, confirm the Studio itself stopped; absence of a training process does not establish that compute charges stopped.
+
+When original inputs move, **Relink identical inputs** checks their content fingerprint before changing paths. Complete verified model exports can be imported and used without reopening the original dataset when the run retained sufficient input metadata. Checkpoint-only continuation still needs the original content. Custom exports only show built-in prediction when they contain a supported, valid inference format.
+
 - Each provider attempt has a persisted identity before submission. Unconfirmed submissions block duplicate retries; use reconciliation and the provider console to resolve uncertainty.
 - Lost connectivity retains the last known execution state and account reservation while monitoring retries. Restart reconnects existing executions rather than silently launching replacements.
 - Pause is capability-specific. Cooperative pause waits for a durable checkpoint; cancellation may lose uncommitted progress; Kaggle requires its native Stop control. A disconnected controller never proves remote compute stopped.
@@ -113,6 +121,17 @@ Native authentication and dependency installation must target the application's 
 - A finished run can choose another export destination after a storage failure. Downloaded ZIPs contain only manifest-listed verified artifacts. Remote recovery files remain until you clean them up directly.
 
 Selecting multiple resources supplies ordered execution/fallback options. It does not combine unrelated free GPUs into one distributed cluster, pool their VRAM, or create experiments automatically. The optional same-host benchmark is a qualification prototype, not a claim of cross-provider speedup.
+
+### Error details
+
+Open **Raw technical logs** on a run, or **Settings > Diagnostic logs**, for
+provider failures. Logs include the operation, app Python environment, client exit
+code and sanitized provider stdout/stderr. Authorization headers, credential
+fields, token values and URL credentials/query values are redacted before saving.
+The central log is `logs/app.log` inside the displayed workspace; it keeps one
+previous file after rotation. Provider tools always run from the app's Python
+environment. An unconfirmed submission stays blocked until its saved execution
+is reconciled; missing worker events do not prove the provider never started it.
 
 ## Custom Python
 
