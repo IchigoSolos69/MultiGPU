@@ -129,6 +129,10 @@ class ReliableJourneyTests(unittest.TestCase):
     def test_proven_submission_failure_can_retry_without_resolution(self):
         job = self.guided()
         job.update(provider_id="kaggle", execution_mode="automatic", status="queued")
+        job["spec"].update(providers=["kaggle"], guided=False)
+        self.service.store.put("connection", "kaggle", {"provider_id": "kaggle", "ready": True,
+                              "config": {"username": "test"}, "quota": {"remaining_hours": 1}})
+        job["spec"]["resolved_resource"] = self.service._resource_preview(job, ["kaggle"])["resolved_resource"]
         self.service.save_job(job)
         intent = {"provider": "kaggle", "attempt_id": "f" * 32}
         error = connectors.ConnectorError("Quota changed before launch", code="quota", intent=intent,
@@ -250,7 +254,7 @@ class ReliableJourneyTests(unittest.TestCase):
                 token = response.headers["X-MultiGPU-Token"]
                 self.assertIn("environment_tasks", json.load(response))
             with patch("multigpu.desktop.provider_signin", return_value={"started": True}) as signin:
-                for route in ("/api/desktop/provider-signin", "/api/environment/tasks/unknown/cancel", "/api/jobs/abc/resolve-submission", "/api/jobs/abc/relocate-inputs"):
+                for route in ("/api/desktop/provider-signin", "/api/environment/tasks/unknown/cancel", "/api/jobs/abc/resolve-submission", "/api/jobs/abc/relocate-inputs", "/api/jobs/abc/continue-guided", "/api/jobs/abc/finish-delivery"):
                     request = urllib.request.Request(base + route, data=b'{}', headers={"Content-Type": "application/json"})
                     with self.assertRaises(urllib.error.HTTPError) as result:
                         urllib.request.urlopen(request)
@@ -263,6 +267,14 @@ class ReliableJourneyTests(unittest.TestCase):
                 signin.assert_called_once_with("kaggle")
             with urllib.request.urlopen(base + "/api/environment/tasks") as response:
                 self.assertEqual(json.load(response), {"tasks": []})
+            job = self.guided()
+            with patch.object(self.service, "export", side_effect=OSError("Disk full at selected export folder")):
+                request = urllib.request.Request(base + "/api/jobs/" + job["id"] + "/export", data=b'{}',
+                                                 headers={"Content-Type": "application/json", "X-MultiGPU-Token": token})
+                with self.assertRaises(urllib.error.HTTPError):
+                    urllib.request.urlopen(request)
+            self.assertIn("local export", self.service.logs(job["id"]))
+            self.assertIn("Disk full", self.service.logs(job["id"]))
         finally:
             server.shutdown()
             server.server_close()

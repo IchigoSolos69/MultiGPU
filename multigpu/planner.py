@@ -90,6 +90,36 @@ def _unresolved_cleanup(job):
     return job.get("provider_id") == "lightning" and job.get("cleanup_status") in ("pending", "failed") and not stopped
 
 
+def resolve_resource(spec, provider_id, connection, hardware, mode="automatic"):
+    """Resolve the reviewed allocation without provisioning or inferring a free cap."""
+    requested = spec.get("device", "auto")
+    resource = {"provider_id": provider_id, "device": "cpu", "gpu": None, "gpu_index": None}
+    config = connection.get("config") or {}
+    if provider_id == "kaggle" and mode == "automatic":
+        resource["gpu"] = "NvidiaTeslaT4"
+    if provider_id == "lightning" and mode == "automatic":
+        machine = config.get("machine") or (connection.get("requested_resource") or {}).get("machine") or (connection.get("actual_resource") or {}).get("machine")
+        resource["gpu"] = str(machine) if machine and "CPU" not in str(machine).upper() else None if machine else "unknown"
+    if spec["recipe"] == "starter" or requested == "cpu":
+        return resource
+    if provider_id == "local":
+        if requested == "cuda" or hardware.get("cuda_available"):
+            resource.update(device="cuda", gpu_index=spec.get("gpu_index", 0))
+    elif provider_id == "modal":
+        gpu = config.get("gpu")
+        gpu = gpu.strip() if isinstance(gpu, str) else None
+        if requested == "cuda" or gpu:
+            resource.update(device="cuda", gpu=gpu or None)
+    elif mode != "automatic":
+        resource["device"] = "cuda" if requested == "cuda" else "runtime_auto"
+    elif provider_id == "kaggle":
+        resource.update(device="cuda", gpu="NvidiaTeslaT4")
+    elif provider_id == "lightning":
+        if requested == "cuda" or resource["gpu"] not in (None, "unknown"):
+            resource["device"] = "cuda"
+    return resource
+
+
 def preview(spec, providers, connections, hardware, active_jobs=()):
     lookup = {p["id"]: p for p in providers}
     decisions = []
@@ -106,34 +136,56 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
         reason = connection.get("detail", "Connect and check this provider first.")
         eligible = bool(ready and mode == "automatic")
         blocker = None if eligible else "connection_not_ready"
+        blockers = []
+        def deny(code, detail, scope="automatic", action=None):
+            if not any(b["code"] == code and b["scope"] == scope for b in blockers):
+                entry = {"code": code, "detail": detail, "scope": scope}
+                if action:
+                    entry["action"] = action
+                blockers.append(entry)
+        resource = resolve_resource(spec, pid, connection, hardware, mode)
+        if pid != "local" and mode == "automatic" and not ready:
+            deny("connection_not_ready", reason, action={"type": "provider_setup", "provider_id": pid})
         preparable = bool(pid != "local" and mode != "development" and provider.get("capabilities", {}).get("notebook_bundle"))
+        if pid == "modal" and spec.get("guided"):
+            from .catalog import MODAL_NOTEBOOK_RETIREMENT
+            deny("notebook_retired", MODAL_NOTEBOOK_RETIREMENT, "preparation")
         if pid == "local":
             mode, eligible, reason = "automatic", True, "Runs on your computer; no cloud bill. Electricity and internet costs remain yours."
             blocker = None
             if spec["recipe"] in ("pytorch", "image") and not hardware.get("torch_available"):
                 eligible, reason = False, "Install PyTorch in this Python environment to use this recipe."
                 blocker = "missing_dependency"
-            if spec["recipe"] == "image" and not hardware.get("torchvision_available"):
+                deny(blocker, reason, action={"type": "environment", "profile": "image" if spec["recipe"] == "image" else "cuda" if spec["device"] == "cuda" else "cpu", "device": spec["device"]})
+            if spec["recipe"] == "image" and (not hardware.get("torchvision_available") or not hardware.get("pillow_available", True)):
                 eligible, reason = False, "Install the image training environment (PyTorch, torchvision and Pillow)."
                 blocker = "missing_dependency"
+                deny(blocker, reason, action={"type": "environment", "profile": "image", "device": spec["device"]})
             if spec["device"] == "cuda" and (spec["recipe"] == "starter" or not hardware.get("cuda_available")):
                 eligible, reason = False, "CUDA requires a compatible PyTorch installation and the PyTorch or custom recipe."
                 blocker = "cuda_unavailable"
+                deny(blocker, reason, action={"type": "environment", "profile": "cuda", "device": "cuda"})
             elif spec["device"] != "cpu" and hardware.get("cuda_available") and spec["recipe"] in ("pytorch", "image"):
                 # An explicit local index must not silently fall back to GPU zero.
                 if spec.get("gpu_index", 0) >= len(hardware.get("gpus", [])):
                     eligible, reason, blocker = False, "The selected local GPU index is unavailable. Choose an attached GPU.", "gpu_unavailable"
+                    deny(blocker, reason)
+            if hardware.get("gpus") and not hardware.get("cuda_available") and spec["recipe"] != "starter" and spec["device"] != "cpu":
+                warnings.append("An NVIDIA GPU is physically detected, but this app's PyTorch CUDA runtime is not ready. GPU detection alone does not qualify CUDA training.")
         elif mode == "development":
             mode, eligible, reason = "development", False, "Repository development helper; excluded from the general training pool."
             blocker = "development_only"
+            deny(blocker, reason, "both")
         elif mode != "automatic":
             reason = "Follow the in-app setup guide and run the training notebook in your own provider account. " + provider.get("free_summary", "")
             eligible = False
             blocker = "guided_required"
-        if pid != "local" and eligible:
+            deny(blocker, reason)
+        if pid != "local" and mode == "automatic":
             if spec["recipe"] == "custom" and not config.get("allow_custom_scripts"):
                 eligible, reason = False, "Confirm custom-script execution in this provider's connection settings first."
                 blocker = "custom_script_consent"
+                deny(blocker, reason)
             quota = connection.get("quota") or {}
             if pid == "kaggle":
                 from .connectors import quota_admission
@@ -141,13 +193,16 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
                 if not admission["eligible"]:
                     eligible, reason = False, admission["detail"]
                     blocker = "quota_unavailable"
+                    deny(blocker, reason)
             else:
                 # These adapters cannot independently verify/enforce a zero bill.
                 # A saved balance assertion must not make preview more permissive
                 # than the fresh connector launch policy.
                 if spec["free_only"]:
-                    eligible, reason = False, "Free-only jobs require a verified zero out-of-pocket cap, including storage and transfer. Use the in-app guided setup while this guardrail is unverified."
+                    alternative = "Use the in-app guided setup while this guardrail is unverified." if preparable else "Choose local compute or another assisted notebook provider while this guardrail is unverified."
+                    eligible, reason = False, "Free-only jobs require a verified zero out-of-pocket cap, including storage and transfer. " + alternative
                     blocker = "free_cap_unverified"
+                    deny(blocker, reason, action={"type": "prepare_guided" if preparable else "provider_setup", "provider_id": pid})
                 else:
                     reported_limit = config.get("native_spend_limit")
                     try:
@@ -159,27 +214,48 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
                     if not config.get("entitlement_confirmed") or not config.get("budget_confirmed") or not math.isfinite(reported_limit) or not 0 < reported_limit <= spec["paid_cap"]:
                         eligible, reason = False, "Confirm your own premium entitlement and a positive provider-side spending limit no higher than this job's cap."
                         blocker = "paid_consent_required"
+                        deny(blocker, reason, action={"type": "provider_setup", "provider_id": pid})
                     else:
                         reason = "Paid execution explicitly enabled. Your reported provider-side limit applies; the app cannot independently verify that billing control."
                         warnings.append(f"{provider['name']}: the spending limit is user-reported. Configure and verify it with the provider, including storage and transfer charges.")
-            if pid == "lightning" and eligible and (config.get("dedicated_studio") is not True or config.get("stop_studio_after_run") is not True):
+            if pid == "lightning" and (config.get("dedicated_studio") is not True or config.get("stop_studio_after_run") is not True):
                 eligible, reason = False, "Lightning automatic runs require a dedicated Studio and permission to stop it after collecting results."
                 blocker = "dedicated_studio_required"
+                deny(blocker, reason)
+            if pid == "modal" and spec["recipe"] != "starter" and spec["device"] == "cuda" and not resource["gpu"]:
+                deny("gpu_not_configured", "CUDA is required, but no Modal GPU is configured. Choose a GPU in Modal settings, or select CPU/Auto.", action={"type": "provider_setup", "provider_id": pid})
+            if pid == "lightning" and spec["recipe"] != "starter" and spec["device"] == "cuda" and resource["gpu"] in (None, "unknown"):
+                deny("gpu_not_configured", "CUDA is required, but the selected Lightning GPU machine is unknown or CPU-only. Choose and check a GPU machine first.", action={"type": "provider_setup", "provider_id": pid})
         if spec["free_only"] and preparable:
             if pid == "colab-enterprise":
                 preparable, reason, blocker = False, "Colab Enterprise is metered cloud compute. This app cannot verify that credits cover this session; enable paid compute with a spending cap to prepare it.", "free_cap_unverified"
+                deny(blocker, reason, "both")
             elif pid in {"deepnote", "hex", "datalore"}:
                 if spec["device"] == "cuda":
                     preparable, reason, blocker = False, f"{provider['name']}'s free plan does not include GPU compute. Choose CPU compute or explicitly enable paid compute with a spending cap.", "paid_gpu_required"
+                    deny(blocker, reason, "both")
                 else:
                     warnings.append(f"{provider['name']}: select the free CPU machine for this free-only notebook. GPU compute requires a paid entitlement; the app cannot select or verify this provider's runtime for you.")
         if spec["recipe"] == "starter" and spec["device"] == "cuda":
             eligible, preparable, reason, blocker = False, False, "The starter recipe runs on CPU. Choose CPU or Auto, or select a GPU-capable recipe.", "recipe_cpu_only"
+            deny(blocker, reason, "both")
         if pid != "local" and any(j.get("provider_id") == pid and (j.get("status") in ("queued", "running", "pausing") or _unresolved_submission(j) or _unresolved_cleanup(j)) for j in active_jobs):
             eligible, reason = False, "A job already uses this account. Wait for it to finish so allowances are not double-reserved."
             preparable, blocker = False, "account_reserved"
+            deny(blocker, reason, "both")
+        automatic_blockers = [b for b in blockers if b["scope"] in {"automatic", "both"}]
+        preparation_blockers = [b for b in blockers if b["scope"] in {"preparation", "both"}]
+        eligible = mode == "automatic" and not automatic_blockers
+        preparable = preparable and not preparation_blockers
+        if spec.get("guided") and preparation_blockers:
+            reason, blocker = preparation_blockers[-1]["detail"], preparation_blockers[-1]["code"]
+        elif not eligible and automatic_blockers:
+            reason, blocker = automatic_blockers[-1]["detail"], automatic_blockers[-1]["code"]
+        elif eligible:
+            blocker = None
         decisions.append({"provider_id": pid, "eligible": eligible, "preparation_eligible": preparable,
-                          "mode": mode, "reason": reason, "blocker_code": blocker})
+                          "mode": mode, "reason": reason, "blocker_code": blocker, "blockers": blockers,
+                          "resolved_resource": resource})
     selected = next((d for d in decisions if d["eligible"]), None)
     execution_mode = "automatic" if selected else None
     if spec.get("guided"):
@@ -206,10 +282,11 @@ def preview(spec, providers, connections, hardware, active_jobs=()):
         elif spec["recipe"] == "starter" or spec["device"] == "cpu":
             device = "cpu"
         elif pid == "local":
-            device = f"cuda:{spec.get('gpu_index', 0)}" if hardware.get("cuda_available") else "cpu"
+            device = f"cuda:{selected['resolved_resource']['gpu_index']}" if selected["resolved_resource"]["device"] == "cuda" else "cpu"
         else:
-            device = "runtime_gpu"
+            device = "cpu" if selected["resolved_resource"]["device"] == "cpu" else "runtime_gpu" if selected["resolved_resource"]["device"] == "cuda" else "runtime_auto"
     return {"eligible": automatic, "preparation_eligible": guided, "execution_mode": execution_mode,
             "selected_provider": pid, "limit_enforcement": enforcement, "resolved_device": device,
+            "resolved_resource": dict(selected["resolved_resource"]) if selected else None,
             "allowed_actions": ["launch"] if automatic else ["prepare_guided"] if guided else [],
             "decisions": decisions, "warnings": warnings}

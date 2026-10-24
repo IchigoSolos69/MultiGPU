@@ -1,0 +1,368 @@
+[
+  {
+    "id": "aws-ec2-sagemaker",
+    "name": "Amazon Web Services: EC2 and SageMaker AI",
+    "parent_vendor": "Amazon Web Services",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines, managed training jobs, distributed clusters and Trainium training",
+    "accelerator": "NVIDIA GPUs; AWS Trainium; selected Gaudi instances",
+    "free_offer": "conditional-credit",
+    "offer_notes": "New accounts receive $100, potentially another $100 through activities. Studio Lab accepts existing customers only.",
+    "interface": "AWS APIs, SDKs, CLI; EC2 lifecycle and SageMaker managed jobs",
+    "limits": "Free-plan service restrictions, CPU-only published EC2 eligible sizes, quota, region, credit expiry and storage charges; GPU-credit eligibility requires verification.",
+    "sources": [
+      "https://aws.amazon.com/ec2/instance-types/accelerated-computing/",
+      "https://aws.amazon.com/sagemaker/ai/pricing/",
+      "https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier.html",
+      "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html",
+      "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-lab.html"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "azure-ml-gpu",
+    "name": "Microsoft Azure: GPU VMs and Azure Machine Learning",
+    "parent_vendor": "Microsoft Azure",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines and managed model training",
+    "accelerator": "NVIDIA NC/ND families; selected AMD configurations",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Eligible new accounts receive $200 for 30 days; no recurring free GPU allocation established.",
+    "interface": "Azure resource APIs, SDKs, CLI and managed training jobs",
+    "limits": "GPU SKU entitlement, quota, region and credit eligibility require verification; paid upgrade enables uncovered charges.",
+    "sources": [
+      "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/series/",
+      "https://learn.microsoft.com/en-us/azure/virtual-machines/accelerator-technologies/cuda-overview",
+      "https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/avoid-charges-free-account"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "google-cloud-training",
+    "name": "Google Cloud: Compute Engine, managed training and Cloud TPU",
+    "parent_vendor": "Google",
+    "category": "major-cloud",
+    "existing_directory": true,
+    "training_mode": "GPU virtual machines, managed serverless training and TPU training",
+    "accelerator": "NVIDIA GPUs; Google Cloud TPUs",
+    "free_offer": "conditional-credit",
+    "offer_notes": "$300 welcome credit lasts 90 days. Nonbillable trial accounts cannot attach VM GPUs; paid billing activation retains unexpired credit.",
+    "interface": "Google Cloud APIs, SDKs and CLI; managed training jobs and VM lifecycle",
+    "limits": "Paid activation enables uncovered charges; GPU quota and capacity remain separate. Existing Google vendor relationship through Colab Enterprise.",
+    "sources": [
+      "https://docs.cloud.google.com/free/docs/free-cloud-features",
+      "https://docs.cloud.google.com/compute/resource-usage",
+      "https://docs.cloud.google.com/gemini-enterprise-agent-platform/machine-learning/training/overview"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "oracle-cloud-gpu",
+    "name": "Oracle Cloud Infrastructure: GPU Compute and Data Science",
+    "parent_vendor": "Oracle",
+    "category": "major-cloud",
+    "training_mode": "GPU VMs, bare-metal clusters and model development",
+    "accelerator": "NVIDIA GPUs; AMD Instinct GPUs; free CPU-only AMD and Arm shapes",
+    "free_offer": "cpu-only-plus-conditional-credit",
+    "offer_notes": "Always Free Arm compute equals 2 OCPUs/12 GB; eligible trial grants $300 for 30 days. No Always Free GPU.",
+    "interface": "OCI APIs, SDKs, CLI and VM lifecycle",
+    "limits": "Home-region capacity restrictions; trial GPU eligibility unverified; GPU compute, storage and networking require separate cost checks.",
+    "sources": [
+      "https://www.oracle.com/cloud/compute/gpu/",
+      "https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm",
+      "https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "alibaba-cloud-gpu",
+    "name": "Alibaba Cloud: ACS GPU, PAI and GPU ECS",
+    "parent_vendor": "Alibaba Cloud",
+    "category": "major-cloud",
+    "training_mode": "Serverless GPU training, GPU VMs and managed model training",
+    "accelerator": "Product-specific GPUs",
+    "free_offer": "conditional-product-trial",
+    "offer_notes": "General trials cover many products; exact GPU product-card eligibility must be confirmed. No universal recurring free GPU allocation established.",
+    "interface": "Cloud APIs, SDKs and container or VM execution",
+    "limits": "Region, account eligibility, exact trial SKU, expiry, storage and transfer charges require verification.",
+    "sources": [
+      "https://www.alibabacloud.com/help/en/cs/user-guide/gpu/",
+      "https://help.aliyun.com/en/user-center/product-overview/learn-about-free-trials",
+      "https://www.alibabacloud.com/en/Free"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "tencent-cloud-gpu-studio",
+    "name": "Tencent Cloud: GPU Cloud and Cloud Studio",
+    "parent_vendor": "Tencent Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines and notebook/development environments",
+    "accelerator": "Configuration-specific GPUs; CPU options",
+    "free_offer": "regional-promotional-compute",
+    "offer_notes": "Chinese Cloud Studio page advertises check-in rewards totaling up to two machine-hours across eligible CPU/GPU configurations; GPU Cloud is paid.",
+    "interface": "GPU cloud resources and hosted development environment; exact external automation requires validation",
+    "limits": "Promotional, account, geography and SKU conditions; not two guaranteed GPU-hours daily for everyone.",
+    "sources": [
+      "https://cloud.tencent.com/product/gpu",
+      "https://cloud.tencent.com/product/cloudstudio"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "huawei-modelarts-codelab",
+    "name": "Huawei Cloud: ModelArts and CodeLab",
+    "parent_vendor": "Huawei Cloud",
+    "category": "major-cloud",
+    "training_mode": "Notebooks, SSH development and distributed training jobs",
+    "accelerator": "Regional GPU or Ascend configurations; CPU options",
+    "free_offer": "regional-conditional-compute",
+    "offer_notes": "Chinese CodeLab docs describe renewable one-hour free GPU sessions; current international ModelArts documentation describes metered training and OBS.",
+    "interface": "ModelArts managed training, notebooks and documented SSH development",
+    "limits": "Real-name authentication, region and resource capacity; no global free entitlement established; storage may be billed and inactivity deletes CodeLab files.",
+    "sources": [
+      "https://support.huaweicloud.com/intl/en-us/qs-modelarts/modelarts_06_0006.html",
+      "https://www.huaweicloud.com/guide/productsdesc-bms_279b8061782b84076c77885fc8b739d6support1"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "ibm-cloud-gpu",
+    "name": "IBM Cloud: GPU and accelerator servers",
+    "parent_vendor": "IBM Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU or AI accelerator virtual servers",
+    "accelerator": "NVIDIA A100/L40S; Intel Gaudi 3",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Current signup guide describes $200 credit for 30 days on a card-verified Pay-As-You-Go account; Lite services do not establish GPU entitlement.",
+    "interface": "IBM Cloud VPC infrastructure and server lifecycle",
+    "limits": "Exact credit eligibility, accelerator capacity, paid account charges and ancillary costs require verification.",
+    "sources": [
+      "https://www.ibm.com/cloud/gpu.html",
+      "https://cloud.ibm.com/docs/overview?topic=overview-tutorial-try-for-free"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "hetzner-gex",
+    "name": "Hetzner: GEX dedicated GPU servers",
+    "parent_vendor": "Hetzner",
+    "category": "major-cloud",
+    "training_mode": "Dedicated single-GPU or multi-GPU training servers",
+    "accelerator": "NVIDIA RTX PRO Blackwell configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly/monthly dedicated servers, potentially with setup fees; current lineup includes four-GPU GEX430.",
+    "interface": "Dedicated server with user-controlled OS and CUDA training software",
+    "limits": "Inventory, location, exact order configuration and setup fees; older single-GPU FAQ conflicts with newer multi-GPU product card.",
+    "sources": [
+      "https://www.hetzner.com/dedicated-rootserver/matrix-gpu/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "ionos-cloud-gpu",
+    "name": "IONOS Cloud: GPU VMs",
+    "parent_vendor": "IONOS",
+    "category": "major-cloud",
+    "training_mode": "Dedicated GPU virtual machines for model training",
+    "accelerator": "NVIDIA H200",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU VM product; no recurring free GPU allocation established.",
+    "interface": "Documented Cloud API operations and SDKs",
+    "limits": "Predefined templates, required privileges, available host capacity and separately planned storage.",
+    "sources": [
+      "https://docs.ionos.com/cloud/compute-services/compute-engine/cloud-gpu-vm",
+      "https://docs.ionos.com/cloud/compute-services/compute-engine/cloud-gpu-vm/overview"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "exoscale-gpu",
+    "name": "Exoscale: GPU compute instances",
+    "parent_vendor": "Exoscale",
+    "category": "major-cloud",
+    "training_mode": "GPU instances for training, simulation and rendering",
+    "accelerator": "NVIDIA RTX PRO 6000 Blackwell; up to eight GPUs per instance",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU instances; no recurring free GPU allocation established.",
+    "interface": "Cloud instance provisioning; API, CLI and SDK documentation linked by provider",
+    "limits": "Manual account screening prioritizes established businesses; current region/currency pricing requires live quote because public price fields are dynamic.",
+    "sources": [
+      "https://www.exoscale.com/pricing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "gcore-gpu",
+    "name": "Gcore: GPU Cloud",
+    "parent_vendor": "Gcore",
+    "category": "major-cloud",
+    "training_mode": "Virtual or bare-metal GPU training and clusters",
+    "accelerator": "NVIDIA A100, H100, H200, L40S and newer product-specific configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand or reserved GPU compute; no verified recurring free GPU allowance.",
+    "interface": "Training environments and documented API provisioning",
+    "limits": "Node versus per-GPU pricing, VAT, stop/delete billing semantics and persistent storage costs differ by resource.",
+    "sources": [
+      "https://gcore.com/pricing/ai",
+      "https://gcore.com/go/sines-3-launch",
+      "https://teamgcore.com/docs/cloud/billing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "upcloud-gpu",
+    "name": "UpCloud: GPU Servers",
+    "parent_vendor": "UpCloud",
+    "category": "major-cloud",
+    "training_mode": "Dedicated-device GPU servers, fine-tuning and multi-GPU training",
+    "accelerator": "NVIDIA L4, L40S, H100, B200 and configuration-dependent newer GPUs",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly GPU servers with spot/reserved options; no recurring free GPU allowance established.",
+    "interface": "Control panel or API; CUDA Ubuntu template",
+    "limits": "Account capacity, selected GPU availability and hourly billing; coming-soon hardware must not be counted as currently rentable.",
+    "sources": [
+      "https://upcloud.com/products/gpu-servers/",
+      "https://upcloud.com/global/products/gpu-servers/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "civo-gpu",
+    "name": "Civo: GPU Compute and Kubernetes",
+    "parent_vendor": "Civo",
+    "category": "major-cloud",
+    "training_mode": "GPU compute and Kubernetes for model training",
+    "accelerator": "NVIDIA A100, L40S, H100, H200 and Blackwell configurations",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Pricing advertises $250 new-user credit for the first month; GPU credit eligibility remains unconfirmed.",
+    "interface": "Documented GPU deployment through dashboard or CLI",
+    "limits": "Account credit conditions and capacity; commitment prices must not be labeled on-demand prices; other cloud resources remain billable.",
+    "sources": [
+      "https://www.civo.com/ai/cloud-gpu",
+      "https://www.civo.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "access-allocations",
+    "name": "ACCESS research and education allocations",
+    "parent_vendor": "ACCESS allocation program",
+    "category": "allocation-program",
+    "training_mode": "Approved research or education on allocated GPU/CPU clusters and clouds",
+    "accelerator": "Host-specific GPUs and CPU resources",
+    "free_offer": "research-allocation",
+    "offer_notes": "No-cost approved allocations; not an unrestricted public GPU rental service.",
+    "interface": "Host-specific Slurm, Open OnDemand, cloud or other authorized interfaces",
+    "limits": "Eligible organizational affiliation/email, generally U.S.-based project lead, approved collaboration and research purpose; unaffiliated users ineligible.",
+    "sources": [
+      "https://allocations.access-ci.org/",
+      "https://access-ci.org/get-started/for-researchers/",
+      "https://allocations.access-ci.org/allocations-policy"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nairr-pilot",
+    "name": "NSF NAIRR Pilot",
+    "parent_vendor": "NSF NAIRR allocation program",
+    "category": "allocation-program",
+    "training_mode": "Approved AI research/education on contributed training systems and commercial clouds",
+    "accelerator": "Award-specific GPUs, accelerators and CPU resources",
+    "free_offer": "research-allocation",
+    "offer_notes": "Application-based resources; underlying systems overlap ACCESS, CloudBank and individual host listings.",
+    "interface": "Approved host or cloud account interfaces, not one universal compute API",
+    "limits": "U.S.-based institutional eligibility and resource-specific rules; institutional email required; not every partner resource supports training.",
+    "sources": [
+      "https://www.nsf.gov/focus-areas/si/nairr",
+      "https://www.alcf.anl.gov/nairr-program"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cloudbank",
+    "name": "CloudBank sponsored cloud allocations",
+    "parent_vendor": "CloudBank allocation-management program",
+    "category": "allocation-program",
+    "training_mode": "Award-funded training on approved commercial cloud services",
+    "accelerator": "Approved AWS, Google Cloud, IBM or Azure resources",
+    "free_offer": "research-allocation",
+    "offer_notes": "NSF-sponsored access through ACCESS/NAIRR awards; not another underlying cloud vendor or an independent duplicate allocation.",
+    "interface": "Federated account access and individual cloud interfaces",
+    "limits": "Approved award, eligible services and remaining balance; email balance alerts do not alone establish zero-spend enforcement.",
+    "sources": [
+      "https://www.cloudbank.org/",
+      "https://operations2.access-ci.org/resources/access-allocated"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "jetstream2-delta-hosts",
+    "name": "Jetstream2, NCSA Delta and DeltaAI allocation hosts",
+    "parent_vendor": "Jetstream2 / NCSA institutional hosts",
+    "category": "allocation-program",
+    "training_mode": "Allocated GPU training VMs or Slurm jobs on concrete research hosts",
+    "accelerator": "Host-specific A100, A40, H200, H100 and AMD resources",
+    "free_offer": "research-allocation",
+    "offer_notes": "Concrete systems accessed through overlapping ACCESS, NAIRR or institutional awards; count awarded resources once.",
+    "interface": "Host-specific VM interfaces; Delta Slurm, SSH with MFA and Open OnDemand",
+    "limits": "Valid allocation, host authorization, queue and wall-time limits, MFA, storage retention and approved purpose.",
+    "sources": [
+      "https://docs.jetstream-cloud.org/alloc/overview/",
+      "https://delta.ncsa.illinois.edu/delta-allocations/",
+      "https://support.access-ci.org/documentation/resources/delta-gpu",
+      "https://computes.illinois.edu/resources/deltaai/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "eurohpc-ai-factories",
+    "name": "EuroHPC AI Factories allocations",
+    "parent_vendor": "EuroHPC Joint Undertaking",
+    "category": "allocation-program",
+    "training_mode": "Allocated supercomputing for AI training and research",
+    "accelerator": "Host-specific GPU supercomputers",
+    "free_offer": "research-or-innovation-allocation",
+    "offer_notes": "Eligible AI SMEs/startups and qualifying research can receive free access; other industrial applications can use paid commercial access.",
+    "interface": "Hosting AI Factory scheduler and authorized execution interfaces",
+    "limits": "Eligibility and technical assessment, proposal, host capacity and awarded duration; Playground, Fast Lane and Large Scale requirements differ.",
+    "sources": [
+      "https://www.eurohpc-ju.europa.eu/ai-factories/ai-factories-access-modes_en",
+      "https://www.eurohpc-ju.europa.eu/playground-access-ai-factories_en"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "google-trc",
+    "name": "Google TPU Research Cloud",
+    "parent_vendor": "Google",
+    "category": "allocation-program",
+    "training_mode": "Approved open-research training on Cloud TPUs",
+    "accelerator": "Google Cloud TPU; not NVIDIA CUDA GPUs",
+    "free_offer": "research-allocation",
+    "offer_notes": "Accepted researchers receive no-charge TPU access and are expected to share supported research and feedback.",
+    "interface": "Cloud TPU environments with TPU-compatible JAX, TensorFlow or PyTorch-XLA recipes",
+    "limits": "Application acceptance, open-research expectations and allocation capacity; arbitrary CUDA scripts require adaptation.",
+    "sources": [
+      "https://sites.research.google/trc/",
+      "https://research.google/resources/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nvidia-academic-grants-paused",
+    "name": "NVIDIA Academic Grant Program: paused applications",
+    "parent_vendor": "NVIDIA",
+    "category": "allocation-program",
+    "training_mode": "Competitive academic training compute or hardware awards when applications reopen",
+    "accelerator": "Program-specific NVIDIA GPU cloud hours or hardware",
+    "free_offer": "paused-research-program",
+    "offer_notes": "Current official page says not accepting new applications despite legacy call cards and Apply Now links.",
+    "interface": "Award-specific NVIDIA cloud or supplied hardware",
+    "limits": "Not an active public signup; competitive faculty eligibility, required technologies, proposal and award conditions.",
+    "sources": [
+      "https://www.nvidia.com/en-us/industries/higher-education-research/academic-grant-program/"
+    ],
+    "status": "researched-not-implemented"
+  }
+]

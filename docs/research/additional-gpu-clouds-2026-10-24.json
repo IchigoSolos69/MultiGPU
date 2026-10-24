@@ -1,0 +1,744 @@
+[
+  {
+    "id": "runpod",
+    "name": "Runpod Pods / Instant Clusters",
+    "parent_vendor": "Runpod",
+    "category": "gpu-cloud",
+    "training_mode": "Custom container training; single-node and multi-node clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid Pods; REST v2 is public beta",
+    "interface": "Pod API, SSH, Jupyter, network volumes",
+    "limits": "Capacity, storage billing and API version require verification",
+    "sources": [
+      "https://www.runpod.io/pricing",
+      "https://docs.runpod.io/",
+      "https://www.runpod.io/blog/runpods-rest-api-v2-is-here-one-api-for-your-entire-gpu-stack"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "vast",
+    "name": "Vast.ai",
+    "parent_vendor": "Vast.ai",
+    "category": "gpu-cloud",
+    "training_mode": "Custom container training on rented marketplace instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU marketplace; no recurring free allowance verified",
+    "interface": "Official Python SDK/CLI; SSH instances",
+    "limits": "Host reliability, availability and storage vary by offer",
+    "sources": [
+      "https://cloud.vast.ai/cli/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "lambda",
+    "name": "Lambda Cloud",
+    "parent_vendor": "Lambda Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Single-node training and reserved multi-node clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "On-demand GPUs and reserved larger clusters",
+    "interface": "UI, API, CLI and SSH instances",
+    "limits": "Running instances bill until termination; filesystems cost separately",
+    "sources": [
+      "https://lambda.ai/instances",
+      "https://docs.lambda.ai/public-cloud/billing/",
+      "https://lambda.ai/cloud"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nebius",
+    "name": "Nebius AI Cloud",
+    "parent_vendor": "Nebius AI Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "GPU instance training and distributed clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "On-demand, preemptible and committed capacity",
+    "interface": "GPU VMs and native cluster orchestration",
+    "limits": "GPU availability and storage charges vary",
+    "sources": [
+      "https://nebius.com/prices"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "digitalocean_gpu",
+    "name": "DigitalOcean GPU Droplets",
+    "parent_vendor": "DigitalOcean",
+    "category": "gpu-cloud",
+    "training_mode": "Custom training on GPU virtual machines",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Separate product from Paperspace; paid by default",
+    "interface": "API, CLI, Terraform and SSH",
+    "limits": "Power-off retains GPU charges; destroy to stop compute billing",
+    "sources": [
+      "https://www.digitalocean.com/products/gpu-droplets",
+      "https://docs.digitalocean.com/products/droplets/details/pricing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "vultr",
+    "name": "Vultr Cloud GPU",
+    "parent_vendor": "Vultr",
+    "category": "gpu-cloud",
+    "training_mode": "Custom training on GPU virtual machines",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU instances; no recurring free allowance verified",
+    "interface": "Provision VM; SSH and self-hosted JupyterLab",
+    "limits": "Account GPU quota and regional capacity require verification",
+    "sources": [
+      "https://docs.vultr.com/product-overviews/cloud-gpu?section=documentation"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "ovh",
+    "name": "OVHcloud GPU / AI Notebooks / AI Training",
+    "parent_vendor": "OVHcloud",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VMs or managed notebook/training jobs",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid Public Cloud GPU and AI products",
+    "interface": "VM execution or provider-native notebook/training workflow",
+    "limits": "Regional pricing, data storage and image compatibility require checking",
+    "sources": [
+      "https://www.ovhcloud.com/fr/public-cloud/prices/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "scaleway",
+    "name": "Scaleway GPU Instances",
+    "parent_vendor": "Scaleway GPU Instances",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training; multi-GPU configurations",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU instances with GPU-ready images",
+    "interface": "Console, CLI, Terraform, SSH and Docker",
+    "limits": "Zone availability and storage affect eligibility and cost",
+    "sources": [
+      "https://www.scaleway.com/en/gpu-instances/",
+      "https://www.scaleway.com/en/pricing/gpu/",
+      "https://www.scaleway.com/en/docs/gpu/quickstart/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "tensordock",
+    "name": "TensorDock",
+    "parent_vendor": "TensorDock",
+    "category": "gpu-cloud",
+    "training_mode": "Training on hosted GPU virtual machines",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid marketplace; configurable VM resources",
+    "interface": "Marketplace API and SSH instances",
+    "limits": "Host availability and retained stopped-instance costs require checking",
+    "sources": [
+      "https://docs.tensordock.com/",
+      "https://beta.dashboard.tensordock.com/deploy"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "massed_compute",
+    "name": "Massed Compute",
+    "parent_vendor": "Massed Compute",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training or dedicated cluster jobs",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Hourly instances; dedicated servers and clusters also available",
+    "interface": "Instances with CUDA; advertised programmatic API",
+    "limits": "API coverage, minimum rental term and termination semantics need qualification",
+    "sources": [
+      "https://massedcompute.com/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "hyperstack",
+    "name": "Hyperstack",
+    "parent_vendor": "Hyperstack",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training and Kubernetes workloads",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand, spot and reserved capacity",
+    "interface": "REST lifecycle API; account-specific pricebook",
+    "limits": "Stopped VMs can still bill; hibernation, deletion, storage and IP differ",
+    "sources": [
+      "https://www.hyperstack.cloud/gpu-pricing",
+      "https://docs.hyperstack.cloud/docs/api-reference/",
+      "https://docs.hyperstack.cloud/docs/billing/pricebook/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "latitude",
+    "name": "Latitude.sh GPU Compute",
+    "parent_vendor": "Latitude.sh GPU Compute",
+    "category": "gpu-cloud",
+    "training_mode": "Training on GPU VMs or bare-metal machines",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Published dedicated single-GPU and multi-GPU configurations",
+    "interface": "VM or bare-metal worker over SSH",
+    "limits": "API lifecycle, minimum rental period and selected billing term need verification",
+    "sources": [
+      "https://www.latitude.sh/pricing?computeTab=gpu-vms"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "crusoe",
+    "name": "Crusoe Cloud",
+    "parent_vendor": "Crusoe Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Custom GPU training; managed distributed jobs",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand, spot and reserved GPUs",
+    "interface": "Console, CLI, API, Terraform, SDK and managed Slurm/Kubernetes",
+    "limits": "Account capacity, storage and chosen reservation terms require checking",
+    "sources": [
+      "https://www.crusoe.ai/cloud",
+      "https://www.crusoe.ai/cloud/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "verda",
+    "name": "Verda, formerly DataCrunch",
+    "parent_vendor": "Verda",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training and interconnected instant clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Formerly DataCrunch; count once",
+    "interface": "Official instance API; cluster and container execution",
+    "limits": "Actual rates, capacity, persistence and lifecycle need account qualification",
+    "sources": [
+      "https://verda.com/",
+      "https://api.datacrunch.io/v1/docs",
+      "https://verda.com/blog/datacrunch-is-changing-its-name-to-verda"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "jarvislabs",
+    "name": "Jarvislabs",
+    "parent_vendor": "Jarvislabs",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM or managed-template training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid per-minute GPUs; India-region and INR options",
+    "interface": "JupyterLab, VS Code, SSH templates and root-access VMs",
+    "limits": "Storage charges and larger-cluster access require checking",
+    "sources": [
+      "https://jarvislabs.ai/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "salad",
+    "name": "SaladCloud",
+    "parent_vendor": "Salad",
+    "category": "gpu-cloud",
+    "training_mode": "Checkpointed single-GPU container fine-tuning; dedicated training servers",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid; current pricing explicitly says no free trial",
+    "interface": "Container groups/API; dedicated SSH servers or VMs",
+    "limits": "Community workers can disconnect or be preempted; persist checkpoints externally",
+    "sources": [
+      "https://app.salad.io/pricing",
+      "https://blog.salad.com/cost-effective-stable-diffusion-fine-tuning-on-salad/",
+      "https://salad.com/dedicated/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "spheron",
+    "name": "Spheron GPU Cloud",
+    "parent_vendor": "Spheron GPU Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Training on rented GPU instances",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand, spot and reserved GPU inventory",
+    "interface": "Funded-credit instance lifecycle; spot maximum-price controls",
+    "limits": "Minimum deposit; live prices and spot capacity vary",
+    "sources": [
+      "https://www.spheron.network/gpu-rental/",
+      "https://docs.spheron.ai/billing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "akash",
+    "name": "Akash Network",
+    "parent_vendor": "Akash Network",
+    "category": "gpu-cloud",
+    "training_mode": "Custom container training; supported multi-GPU deployments",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid decentralized GPU marketplace",
+    "interface": "SDL specifications, bids, leases and persistent storage",
+    "limits": "Provider trust, escrow, storage and interconnect need explicit selection",
+    "sources": [
+      "https://akash.network/docs/learn/core-concepts/gpu-deployments/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "novita",
+    "name": "Novita AI GPU Instances",
+    "parent_vendor": "Novita AI GPU Instances",
+    "category": "gpu-cloud",
+    "training_mode": "Custom training on GPU instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Instance rentals differ from model inference APIs",
+    "interface": "Programmatic launch, restart and termination; PyTorch/JAX/CUDA templates",
+    "limits": "GPU inventory, account limits and interruption recovery require checking",
+    "sources": [
+      "https://novita.ai/gpus/",
+      "https://novita.ai/gpus-spot"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "beam",
+    "name": "Beam",
+    "parent_vendor": "Beam",
+    "category": "gpu-cloud",
+    "training_mode": "Long-running Python training; account-enabled same-machine multi-GPU",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid functions and on-demand machines",
+    "interface": "Python GPU functions, containers, logs and persistent volumes",
+    "limits": "Compute usage billed despite zero subscription fee; multi-GPU needs account enablement",
+    "sources": [
+      "https://www.beam.cloud/use-cases/training",
+      "https://www.beam.cloud/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "thunder",
+    "name": "Thunder Compute",
+    "parent_vendor": "Thunder Compute",
+    "category": "gpu-cloud",
+    "training_mode": "Training on persistent GPU instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid instances; distinguish VM lifetime from sandbox TTL",
+    "interface": "SSH, CLI/API instances; separate sandbox product",
+    "limits": "Snapshot storage costs separately; GPU sandboxes require access approval",
+    "sources": [
+      "https://www.thundercompute.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "sesterce",
+    "name": "Sesterce Cloud",
+    "parent_vendor": "Sesterce Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Training on GPU VMs or bare-metal servers",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand machines and spot offers",
+    "interface": "SSH-accessible instances and persistent volumes",
+    "limits": "Prefer live catalog over older example prices; verify API coverage",
+    "sources": [
+      "https://docs.sesterce.com/",
+      "https://cloud.sesterce.com/compute"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "oblivus",
+    "name": "Oblivus Cloud",
+    "parent_vendor": "Oblivus Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Training on dedicated GPU instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Occasional project/event credits by request; otherwise paid",
+    "interface": "GPU VM worker; public API and account pricing",
+    "limits": "No formal academic credit program; retained storage/IP cost money while off",
+    "sources": [
+      "https://oblivus.com/pricing/",
+      "https://docs.oblivus.com/billing/instance-pricing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "hot_aisle",
+    "name": "Hot Aisle",
+    "parent_vendor": "Hot Aisle",
+    "category": "gpu-cloud",
+    "training_mode": "ROCm training or fine-tuning on AMD VMs/bare metal",
+    "accelerator": "AMD Instinct MI300X",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid minute-metered VMs and eight-GPU dedicated nodes",
+    "interface": "Root SSH; TUI, API and CLI provisioning",
+    "limits": "Requires separately validated ROCm recipes; CUDA-only workloads cannot claim compatibility",
+    "sources": [
+      "https://hotaisle.xyz/pricing",
+      "https://hotaisle.xyz/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "gmi",
+    "name": "GMI Cloud",
+    "parent_vendor": "GMI Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Bare-metal training or GPU container execution",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand or reserved NVIDIA GPU infrastructure",
+    "interface": "Full-root servers, containers and cluster platform",
+    "limits": "Managed cluster option is early access; minimum node size and stock require checking",
+    "sources": [
+      "https://www.gmicloud.ai/en/gpus"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "genesis",
+    "name": "Genesis Cloud",
+    "parent_vendor": "Genesis Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Training on GPU virtual machines",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Official API confirms instance creation incurs costs",
+    "interface": "Compute API; SSH keys, startup scripts and instance deletion",
+    "limits": "Current pricing and bookable hardware unverified; main pricing site timed out",
+    "sources": [
+      "https://developers.genesiscloud.com/compute-api/",
+      "https://developers.genesiscloud.com/compute-api/instances/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "leadergpu",
+    "name": "LeaderGPU",
+    "parent_vendor": "LeaderGPU",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VPS training or dedicated server workloads",
+    "accelerator": "NVIDIA / Intel Gaudi",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly VPS; dedicated daily, weekly or monthly terms",
+    "interface": "SSH with PyTorch, Jupyter and Docker environments",
+    "limits": "VPS versus bare-metal rental term and spot interruption rules differ",
+    "sources": [
+      "https://www.leadergpu.com/landing/vps-gpu.html",
+      "https://www.leadergpu.com/cloud_gpu"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "radiant",
+    "name": "Radiant AI Cloud, formerly Ori",
+    "parent_vendor": "Radiant",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training; managed multi-node supercomputers",
+    "accelerator": "NVIDIA",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Formerly Ori; unspecified trial credits available by contacting support",
+    "interface": "VM/API/CLI/console; managed Slurm and Kubernetes",
+    "limits": "Trial amount, expiry and applicable resources require support approval",
+    "sources": [
+      "https://radiant.co/ori",
+      "https://docs.ori.co/virtual-machines/overview/",
+      "https://docs.ori.co/support/faq/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "hydra",
+    "name": "Hydra Host / Brokkr",
+    "parent_vendor": "Hydra Host",
+    "category": "gpu-cloud",
+    "training_mode": "Bare-metal GPU training and interconnected clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid interruptible, on-demand and reserved infrastructure",
+    "interface": "Brokkr API; cloud-init, custom images, power and termination controls",
+    "limits": "Minimum contract, ordering flow and provider allocation need validation",
+    "sources": [
+      "https://hydrahost.com/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "firebird",
+    "name": "Firebird Cloud",
+    "parent_vendor": "Firebird Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training and managed Kubernetes jobs",
+    "accelerator": "NVIDIA Blackwell",
+    "free_offer": "none-verified",
+    "offer_notes": "Usage-billed GPU infrastructure without fixed-plan commitment in inspected documentation",
+    "interface": "VM/SSH execution and managed Kubernetes",
+    "limits": "Allocated disks, filesystems and public IPs can bill after compute stops",
+    "sources": [
+      "https://docs.firebird.ai/",
+      "https://docs.firebird.ai/cloud/billing/how-billing-works/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "gcore",
+    "name": "Gcore GPU Cloud",
+    "parent_vendor": "Gcore GPU Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM or bare-metal cluster training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU cloud; startup matching grants require spending",
+    "interface": "VM/container and cluster API path",
+    "limits": "Confirm full versus fractional GPU, region, term and retained storage",
+    "sources": [
+      "https://gcore.com/de/gpu-cloud",
+      "https://gcore.com/de/pricing/ai",
+      "https://gcore.com/cloud/virtual-machines"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "denvr",
+    "name": "Denvr AI Cloud",
+    "parent_vendor": "Denvr AI Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Training on GPU VMs, containers or bare-metal clusters",
+    "accelerator": "NVIDIA / Intel Gaudi",
+    "free_offer": "conditional-credit",
+    "offer_notes": "AI Ascend offers initial startup credits and larger eligibility-based awards",
+    "interface": "REST, CLI, Python, Terraform and GPU/Jupyter images",
+    "limits": "Startup awards require application; Gaudi needs a distinct runtime profile",
+    "sources": [
+      "https://www.denvr.com/",
+      "https://www.denvr.com/pricing",
+      "https://docs.denvrdata.com/docs/platform/billing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "qubrid",
+    "name": "Qubrid AI GPU Compute",
+    "parent_vendor": "Qubrid AI GPU Compute",
+    "category": "gpu-cloud",
+    "training_mode": "Training on GPU VMs or dedicated server contracts",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU compute distinct from model inference APIs",
+    "interface": "Ready-to-code VM templates; configurable resources and auto-stop",
+    "limits": "Root disks bill while stopped; API lifecycle completeness needs qualification",
+    "sources": [
+      "https://www.qubrid.com/pricing",
+      "https://platform.qubrid.com/create-ai-compute/gpu-instances",
+      "https://platform.qubrid.com/create-ai-compute/NVIDIA%20L4%20%2824GB%29"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "coreweave",
+    "name": "CoreWeave",
+    "parent_vendor": "CoreWeave",
+    "category": "enterprise-gpu",
+    "training_mode": "GPU Kubernetes training and distributed cluster jobs",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand, spot and reserved GPU capacity",
+    "interface": "Native Kubernetes or cluster job connector",
+    "limits": "Organization entitlement, quotas and minimum training-node size require verification",
+    "sources": [
+      "https://coreweave.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cudo",
+    "name": "CUDO Compute",
+    "parent_vendor": "CUDO Compute",
+    "category": "enterprise-gpu",
+    "training_mode": "Dedicated enterprise GPU cluster training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Enterprise clusters rather than a verified current self-service free pool",
+    "interface": "Provisioned cluster/VM integration after sales and API qualification",
+    "limits": "Current pricing is quote-on-request; old retail hourly rates are not current evidence",
+    "sources": [
+      "https://www.cudocompute.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nscale",
+    "name": "Nscale",
+    "parent_vendor": "Nscale",
+    "category": "enterprise-gpu",
+    "training_mode": "Bare-metal training; managed Slurm/Kubernetes and instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Advertises on-demand services and reserved GPU infrastructure",
+    "interface": "Provisioned VM/cluster platform; console and API qualification needed",
+    "limits": "Public numeric rates and immediate new-account availability were not established",
+    "sources": [
+      "https://www.nscale.com/services/infrastructure-services",
+      "https://www.nscale.com/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "mistral_compute",
+    "name": "Mistral Compute",
+    "parent_vendor": "Mistral AI",
+    "category": "enterprise-gpu",
+    "training_mode": "Dedicated GPU training; managed Slurm and Kubernetes",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid dedicated European compute infrastructure",
+    "interface": "Enterprise cluster integration after reservation",
+    "limits": "Contact/reserve access; separate from free model playground and inference APIs",
+    "sources": [
+      "https://mistral.ai/cloud/compute/",
+      "https://mistral.ai/news/mistral-compute/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "firmus",
+    "name": "Firmus AI GPU Cloud",
+    "parent_vendor": "Firmus AI GPU Cloud",
+    "category": "enterprise-gpu",
+    "training_mode": "GPU VM training and reserved distributed clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand instances and reserved bare-metal clusters",
+    "interface": "CUDA/Jupyter environments; Slurm, orchestration and interface qualification",
+    "limits": "Ordering requires enquiry; future GPU announcements do not establish available stock",
+    "sources": [
+      "https://firmus.co/ai-cloud/ai-cloud-compute",
+      "https://firmus.co/cloud-services"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "tensorwave",
+    "name": "TensorWave",
+    "parent_vendor": "TensorWave",
+    "category": "enterprise-gpu",
+    "training_mode": "AMD GPU bare-metal training and fine-tuning",
+    "accelerator": "AMD Instinct",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid enterprise training infrastructure",
+    "interface": "Managed Slurm/Kubernetes and engineering-assisted infrastructure",
+    "limits": "Requires ROCm qualification; sales/POC enquiry is not a universal free allocation",
+    "sources": [
+      "https://tensorwave.com/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cirrascale",
+    "name": "Cirrascale Cloud Services",
+    "parent_vendor": "Cirrascale Cloud Services",
+    "category": "enterprise-gpu",
+    "training_mode": "Dedicated NVIDIA/AMD server and cluster training",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid reserved dedicated training servers",
+    "interface": "Contracted server or cluster worker",
+    "limits": "Monthly or longer terms; advertised hourly equivalents are not hourly rentals",
+    "sources": [
+      "https://www.cirrascale.com/pricing",
+      "https://www.cirrascale.com/ai-innovation-cloud/training"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nvidia_brev",
+    "name": "NVIDIA Brev",
+    "parent_vendor": "NVIDIA",
+    "category": "access-platform",
+    "training_mode": "Remote training on selected provider GPU instances",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Access platform, not an additional independent GPU fleet",
+    "interface": "Brev CLI GPU search/create/exec and startup scripts",
+    "limits": "Pin provider/type/price; avoid default automatic cheapest placement",
+    "sources": [
+      "https://docs.nvidia.com/brev/cli/instance-creation"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nvidia_lepton",
+    "name": "NVIDIA DGX Cloud Lepton",
+    "parent_vendor": "NVIDIA",
+    "category": "access-platform",
+    "training_mode": "Partner-cloud GPU training access",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "NVIDIA access platform; distinct from old standalone Lepton AI branding",
+    "interface": "Compute marketplace; per-account execution/API path needs qualification",
+    "limits": "Underlying partner capacity and billing apply; overlaps other listed providers",
+    "sources": [
+      "https://nvidianews.nvidia.com/news/nvidia-announces-dgx-cloud-lepton-to-connect-developers-to-nvidias-global-compute-ecosystem"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "prime_intellect",
+    "name": "Prime Intellect",
+    "parent_vendor": "Prime Intellect",
+    "category": "access-platform",
+    "training_mode": "Marketplace GPU training and hosted training workflows",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid access platform with on-demand and reserved clusters",
+    "interface": "GPU marketplace, hosted training, CLI/API qualification",
+    "limits": "Separate GPU compute from CPU sandboxes and partner fleet totals",
+    "sources": [
+      "https://www.primeintellect.ai/",
+      "https://app.primeintellect.ai/dashboard/on-demand-gpus?tab=multi-node"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "shadeform",
+    "name": "Shadeform",
+    "parent_vendor": "Shadeform",
+    "category": "access-platform",
+    "training_mode": "Cross-cloud GPU instance training",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU access platform; current domain is shadeform.com",
+    "interface": "Unified instance API, console, procurement and centralized billing",
+    "limits": "Marketplace fee wording does not make underlying GPU instances free",
+    "sources": [
+      "https://shadeform.com/",
+      "https://www.shadeform.ai/?slack=true"
+    ],
+    "status": "researched-not-implemented"
+  }
+]

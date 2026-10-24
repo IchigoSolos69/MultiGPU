@@ -1,60 +1,60 @@
-# MultiGPU 0.3.1 validation
+# MultiGPU 0.4.3 validation
 
-Verified on 23 October 2026 using isolated test workspaces on the current Windows
-host. No cloud training jobs were launched. The implementation milestones and
-qualification gates are in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+Verified on 24 October 2026. Modal retired its hosted notebook editor on 23 October; its Functions API still supports GPU workloads. This patch retains the Functions/Volumes connector and removes obsolete Modal notebook preparation, downloads and fallback instructions. Existing checkpoint/model import and recovery remain available. Automatic free-only admission remains blocked until independent zero-spend enforcement is verified.
+
+Official sources: [shutdown notice](https://modal.com/changelog/sunsetting-modal-notebooks), [notebook availability](https://modal.com/docs/guide/notebooks), [Functions API](https://modal.com/docs/guide/functions).
+
+| Fresh check | Result | Evidence |
+|---|---|---|
+| Full Python regression | **230 passed, no skips** | [Log](.test-runs/v043-python-tests.log) |
+| Modal retirement | Catalog/setup, unchanged paid Functions eligibility, unchanged free-only rejection, direct notebook/payload/bundle rejection before staging, legacy checkpoint continuation in Colab and completed-model import/export passed | tests/test_modal_retirement.py in full suite |
+| Real notebook/browser delivery | Local execution of actual generated Colab notebook, safe rerun, verified import and prediction passed; Modal's retired notebook actions are absent, old results remain importable, explicit Colab alternative is offered | [Proof](.test-runs/browser-v043/delivery-proof.json) |
+| Setup and journey browsers | Both affected suites passed, including saved navigation, account verification, recovery and focused inputs | [Setup](.test-runs/v043-browser-setup.log), [journey](.test-runs/v043-browser-journey.log) |
+| Exact Windows payload | Bundled Python 3.12.15, file hashes, real CPU training/export and persisted restart passed with system Python excluded | [Payload acceptance](<build/smoke install b97161ae8b664c82b1621584978e722e/acceptance-result.json>) |
+| Source/version integrity | 3,458 payload files verified, 28 packaged sources match; native executable version 0.4.3.0; JavaScript and UTF-8 checks passed | [Source audit](.test-runs/v043-source-audit.json) |
+
+Installer: [MultiGPU-0.4.3-Setup.exe](dist/MultiGPU-0.4.3-Setup.exe), **31,553,488 bytes**. SHA-256: `eba5ec98fb59199605f2bd798ae81bf82aeec442424552406f78d9a9c0bfc384`. Manifest SHA-256: `bb836ff278068fd733921ae9a4be1bb3ee9afbd9ff28069a5e3b23e6fdf4276d`. [Release record](dist/acceptance-results-0.4.3.json).
+
+No live Modal job or billing test was performed. The installed app/workspace was preserved. Native-host behavior and real CUDA qualification below are retained 0.4.2 evidence, not fresh 0.4.3 certification. Installer signing, clean Windows/WebView2, upgrade/uninstall replay and real Colab/Drive persistence remain unqualified.
+
+## Retained 0.4.2 qualification
+
+Verified on 24 October 2026 in isolated workspaces on this Windows host. The installed application, its environment and saved workspace were preserved. No cloud provider jobs were launched.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Full Python regression suite | 140 tests passed, no skips | [.test-runs/v031-python-tests.log](.test-runs/v031-python-tests.log) |
-| Real CPU recipes | Starter, PyTorch tabular and pretrained ResNet-18 training, exact resume, held-out evaluation and portable prediction passed | Recipe and worker tests in the full suite |
-| Browser smoke | Real tabular/image training, export/prediction, pause/resume, saved setup, ordered resources, history, keyboard and mobile passed | [Browser results](.test-runs/browser/final-browser-results.txt) |
-| Browser contract tests | Summary, verified file list, class-zero confidence, explicit rollback, guided continuation controls and cache confirmation passed | Browser results above |
-| In-app setup | Provider/job guides, saved steps, explicit notebook download, no automatic instruction ZIP, manual vs observed readiness and responsive layouts passed | Browser results above |
-| JavaScript syntax | Application and all three browser test scripts passed | Browser results above |
-| Relocated Windows payload | Bundled Python, application-owned environment, training/export and persisted restart passed with system Python excluded | [Packaging acceptance](dist/acceptance-results.json) |
-| Provider recovery and error logs | Managed CLI selection, structured recovery, retained redacted provider errors, nested credentials, timeout output, and blocked duplicate submissions passed | [Recovery browser results](.test-runs/browser/recovery-results.txt), diagnostics tests in the full suite |
-| Actual Windows installer | Version 0.3.0 install/uninstall passed with data retained; not repeated for this diagnostic patch | [Prior Windows qualification](dist/acceptance-results-0.3.0.json) |
-| Packaged native tray | Version 0.3.0 readiness and authenticated shutdown passed; native behavior retained | Prior Windows qualification above |
-| Dedicated Windows window | Version 0.3.0 actual MultiGPU.exe, downloads, clipboard, links, origin guards and hide/restore passed; not repeated for this patch | Prior Windows qualification above |
+| Full Python regression | **224 passed, no skips** | [.test-runs/v042-python-tests.log](.test-runs/v042-python-tests.log) |
+| Real local browser journey | CPU training, pause/resume, image training/prediction, verified export and persisted drafts passed | [Smoke log](.test-runs/v042-browser-smoke.log) |
+| Notebook delivery | Actual downloaded Colab notebook executed locally, reran without additional training, packaged one current export, imported 12 loss observations and verified checkpoint/model files, then predicted in the app | [Delivery proof](.test-runs/browser-v042/delivery-proof.json) |
+| Recovery APIs and worker | Full-target finalization without optimizer updates, immutable reviewed checkpoints, stale/double commits, stopped guards, selected assisted fallback and malformed/oversize history passed | [Recovery log](.test-runs/v042-recovery-regressions.log), full regression above |
+| Recovery UI | Preview/cancel, explicit notebook-stopped confirmation, stale-review rejection and fresh retry, preserved target, CPU delivery wording and 1440/390 layouts passed with fixture responses | [Recovery proof](.test-runs/browser-v042/recovery-proof.json) |
+| Existing UI contracts | Contract, setup, journey, provider-tools and provider-observations suites passed, including rollback consent, focus retention, safe account checks and diagnostics | [Contract](.test-runs/v042-browser-contract.log), [setup](.test-runs/v042-browser-setup.log), [journey](.test-runs/v042-browser-journey.log), [tools](.test-runs/v042-browser-provider-tools.log), [observations](.test-runs/v042-browser-provider-observations.log) |
+| Recovery storage and Modal snapshots | Disabled-by-default explicit Drive mount, verified immutable copies, corrupted-newest fallback, persistence-failure pause, packaging/rerun locking, incremental snapshots and frozen allocations passed local/SDK-fixture tests | Full Python regression above |
+| Actual CUDA | RTX 5050 Laptop, driver 617.14, Torch 2.14.1+cu130, torchvision 0.29.1+cu130: tabular (12 steps) and image (4 steps) training, checkpoint/resume, verified exports and standalone prediction passed | [GPU proof](.test-runs/cuda-audit-ba2977adbc8241a49b8326615041118a/proof.json) |
+| Exact payload | Bundled Python 3.12.15, real CPU training/export and persisted restart passed with system Python excluded | [Payload acceptance](<build/smoke install 97a024a84897410d900b173a4bc8c0a2/acceptance-result.json>) |
+| Windows host | Exact packaged native window, HTTP/blob/notebook downloads, clipboard restoration, navigation/origin guards, browser/controller recovery, second launch and exit with controller unavailable passed | [Native acceptance](<build/native acceptance 71833681192d47978feb8a543eafa75c/native reports/native-acceptance-result.json>) |
+| Windows helpers | Instance separation, controller identity, notification bounds, environment repair/decline/rollback and unresolved-attempt exit guard passed | [Helper acceptance](<build/native helper acceptance aa43245b9250454e9a13540a94c143de/acceptance-result.json>) |
+| Release integrity | All **3,458 payload files** verified; **28 packaged sources** match this workspace; native executable 0.4.2.0; static UTF-8 and JavaScript syntax checks passed | [Source audit](.test-runs/v042-source-audit.json) |
 
-The Python regressions include uncertain provider submissions, monitoring retry
-without resubmission, restart reconciliation, account reservation, queued dataset
-changes, checkpoint corruption, incomplete imports, image companion assets,
-continued guided notebooks, storage failures and alternate export destinations.
-Provider calls in these tests are mocks.
+The CUDA audit used a separate test environment. Resumed tabular and image model, optimizer and RNG states exactly matched uninterrupted baselines. Tabular portable prediction matched a GPU forward pass within 1e-6; image export prediction used the portable CPU adapter. These results qualify this tested driver/package/hardware combination, not every user's installation. The disposable audit environment was removed after qualification to recover disk space; proof, logs, checkpoints and exported models were retained.
 
-The setup regressions also verify that acknowledgement never changes account
-readiness, stale checkpoint guides cannot advance, new sessions require new
-verified imports, and notebook/payload pairs execute after separate downloads.
-Corrupt payloads stop before training. Instructions remain in the app; downloaded
-files contain runnable training code and selected inputs.
+The notebook round trip ran generated code in a local Python process. Drive tests use explicit local folders and fixture mount behavior; they do not certify a real Colab GPU or survival after Google deletes a runtime. Modal tests use SDK fixtures, not a live billing account. Successful notebook imports describe recorded provenance and never claim an independently observed provider session.
 
 ## Release artifact
 
-- Installer: [MultiGPU-0.3.1-Setup.exe](dist/MultiGPU-0.3.1-Setup.exe)
-- Size: 31,087,501 bytes
-- SHA-256: `696fde1e9440abd4bdfcb4160b9882c6b1ac2435a136698214f9b22aa2a8501c`
-- Bundled runtime: Python 3.12.15; uv 0.12.22
-- Native window: Microsoft WebView2 SDK 1.0.4258.31; tested with existing Runtime 155.0.4283.62
-- Exact payload and installer identity: [release-info.json](dist/release-info.json)
-
-The packaged application and launcher hashes match the tested, frozen source.
-Optional training dependencies are prepared explicitly after installation.
+- Installer: [MultiGPU-0.4.2-Setup.exe](dist/MultiGPU-0.4.2-Setup.exe), **31,553,693 bytes**.
+- SHA-256: `801a3ff6ba1b8aca5e0458af170c55456523a709a1c29d6ae1311a5f78dd3173`.
+- Payload manifest SHA-256: `4e23b4a2f7518e8cf05b6566d4a86d5cdc2cc559a3fcdad18e3f895c6f093d74`.
+- [Release acceptance record](dist/acceptance-results-0.4.2.json).
 
 ## Qualification still required
 
-- Live provider accounts: launch, actual allowance exhaustion, stop behavior,
-  recovery, usable model delivery and enforceable billing controls.
-- Actual CUDA hardware and a clean Windows 10/11 virtual machine.
-- First-time WebView2 Runtime installation on a machine without it. The app
-  explains the Microsoft prerequisite and requests consent before setup; current
-  tests reuse the existing Runtime.
-- Installer signing; the current installer is unsigned.
+- Live provider launch, allowance exhaustion, stopping, interruption recovery, model delivery and billing controls.
+- Actual Colab/Drive persistence across provider runtime deletion and other GPU/driver installations.
+- Clean Windows 10/11 and first-time WebView2 installation.
+- Actual installer upgrade/uninstall replay: the existing registered installation was preserved. Relocated exact-payload and native-host tests passed on this host.
+- Installer signing; this installer remains unsigned.
 
-Modal and Lightning credit-backed free-only automation remains blocked until
-zero-spend enforcement is verified. Provider quotas and available hardware are
-account observations, never guarantees. Assisted notebooks require the user to
-launch their notebook and bring results back for verification. Custom checkpoint
-semantics are defined by the user's script; portable checkpoint files are bounded
-to 64 MB. Cross-provider synchronous training remains outside this release.
+Automatic Modal/Lightning free-only execution remains blocked while independent zero-spend enforcement is unverified. Assisted notebooks require manual execution/import. Original training targets, recovery copies and user-controlled remote cleanup remain protected. Cross-provider synchronous training remains unqualified.
+
+Prior release evidence is retained in [0.4.0 acceptance](dist/acceptance-results-0.4.0.json) and [0.4.1 acceptance](dist/acceptance-results-0.4.1.json).

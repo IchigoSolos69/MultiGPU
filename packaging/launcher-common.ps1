@@ -30,12 +30,24 @@ function Stop-MultiGPUController {
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
     do {
         $jobs=Invoke-RestMethod -Uri ($Connection.url+'/api/jobs') -TimeoutSec 3
-        $remaining=@($jobs | Where-Object { $_.status -in @('queued','running','pausing') -or ($_.provider_id -eq 'lightning' -and $_.handle -and !$_.handle.studio_stopped -and $_.cleanup_status -ne 'verified') })
+        $remaining=@($jobs | Where-Object { ($_.provider_id -ne 'kaggle' -and $_.status -in @('queued','running','pausing')) -or ($_.provider_id -eq 'lightning' -and $_.cleanup_status -eq 'pending') })
         if($remaining.Count) { Start-Sleep -Milliseconds 250; [Windows.Forms.Application]::DoEvents() }
     } while($remaining.Count -and [DateTime]::UtcNow -lt $deadline)
-    if($remaining.Count -and (!$ConfirmUnconfirmed -or !(& $ConfirmUnconfirmed))) { return $false }
+    if(@(Get-MultiGPUUnconfirmedJobs $jobs).Count -and (!$ConfirmUnconfirmed -or !(& $ConfirmUnconfirmed))) { return $false }
     Invoke-RestMethod -Uri ($Connection.url+'/api/shutdown') -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' -TimeoutSec 8 | Out-Null
     return $true
+}
+
+function Get-MultiGPUUnconfirmedJobs {
+    param($Jobs)
+    foreach($job in $Jobs) {
+        $resolution=$job.submission_resolution
+        $attempt=$job.spec.attempt_id
+        $resolved=$attempt -and $resolution.source -eq 'user_confirmed' -and $resolution.outcome -in @('stopped','absent') -and $resolution.attempt_id -eq $attempt
+        $unknown=$job.submission_status -eq 'unknown' -and !$resolved
+        $studio=$job.provider_id -eq 'lightning' -and ($job.cleanup_status -in @('pending','failed') -or ($job.handle -and !$job.handle.studio_stopped -and $job.cleanup_status -ne 'verified'))
+        if($job.status -in @('queued','running','pausing') -or $unknown -or $studio) { $job }
+    }
 }
 
 function Get-MultiGPUNotificationChanges {

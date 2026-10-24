@@ -47,6 +47,8 @@ class LifecycleTests(unittest.TestCase):
         self.service.save_job(job)
         self.service.store.put("connection", "kaggle", {"provider_id": "kaggle", "ready": True,
                               "config": {"username": "test"}, "quota": {"remaining_hours": 1, "source": "test", "observed_at": "test"}})
+        job["spec"]["resolved_resource"] = self.service._resource_preview(job, ["kaggle"])["resolved_resource"]
+        self.service.save_job(job)
         return job
 
     def train(self, job, folder=None, **changes):
@@ -236,14 +238,16 @@ class LifecycleTests(unittest.TestCase):
         with zipfile.ZipFile(bundle) as archive:
             notebook = json.loads(archive.read("training.ipynb"))
         runner = self.root / "continue.py"
-        runner.write_text("".join(notebook["cells"][1]["source"]), encoding="utf-8")
+        runner.write_text("\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code"), encoding="utf-8")
         destination = self.root / "second-session"
         destination.mkdir()
         result = subprocess.run([sys.executable, str(runner)], cwd=destination, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout[-2000:])
-        events = [json.loads(line) for line in (destination / "output" / "events.jsonl").read_text().splitlines()]
+        from multigpu.notebook_runtime import job_key
+        output = destination / "multigpu-runs" / job_key(job["spec"]) / "output"
+        events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
         self.assertEqual(next(event["step"] for event in events if event["type"] == "checkpoint"), 3)
-        self.assertEqual(load_checkpoint(destination / "output" / "checkpoint.json")["step"], 8)
+        self.assertEqual(load_checkpoint(output / "checkpoint.json")["step"], 8)
 
     def test_image_import_publishes_verified_companion_and_second_bundle(self):
         try:

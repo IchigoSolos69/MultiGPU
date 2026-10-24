@@ -46,6 +46,25 @@ try {
     try { Get-MultiGPUEnvironment $failureApp $broken -ConfirmRepair { $true } | Out-Null } catch { $failed=$true }
     if(!$failed -or !(Test-Path -LiteralPath (Join-Path $broken 'original.txt'))) { throw 'Failed repair did not restore the old environment' }
 } finally { $env:MULTIGPU_PYTHON=$savedPython }
-$result=@{passed=$true;instance_isolation=$true;controller_identity=$true;notification_baseline_and_bound=$true;repair_decline_preserves_data=$true;repair_keeps_backup=$true;repair_failure_rolls_back=$true;test_root=$testRoot}
+$script:stopFixture=@{id='unknown';provider_id='kaggle';status='interrupted';submission_status='unknown';spec=@{attempt_id='current'}}
+$script:shutdownCalled=$false
+function Invoke-RestMethod {
+    param($Uri,$Method,$Headers,$ContentType,$Body,$TimeoutSec)
+    if($Uri.EndsWith('/api/jobs')) { return @($script:stopFixture) }
+    if($Uri.EndsWith('/api/shutdown')) { $script:shutdownCalled=$true; return @{} }
+    throw 'Unexpected controller mutation in stop test'
+}
+try {
+    $watch=[Diagnostics.Stopwatch]::StartNew()
+    if(Stop-MultiGPUController @{url='http://127.0.0.1:1';token='test'} { $false }) { throw 'Unconfirmed stop decline was ignored' }
+    if($script:shutdownCalled -or $watch.Elapsed.TotalSeconds -gt 3) { throw 'Unknown submission was shut down or waited as active compute' }
+    $script:stopFixture.submission_resolution=@{source='user_confirmed';outcome='stopped';attempt_id='older'}
+    if(@(Get-MultiGPUUnconfirmedJobs @($script:stopFixture)).Count -ne 1) { throw 'Stale resolution suppressed warning' }
+    $script:stopFixture.submission_resolution.attempt_id='current'
+    if(!(Stop-MultiGPUController @{url='http://127.0.0.1:1';token='test'} { throw 'Resolved attempt prompted again' }) -or !$script:shutdownCalled) { throw 'Matching user resolution did not permit shutdown' }
+    $pending=@{id='studio';provider_id='lightning';status='error';cleanup_status='failed';handle=$null}
+    if(@(Get-MultiGPUUnconfirmedJobs @($pending)).Count -ne 1) { throw 'Failed Studio cleanup without handle suppressed warning' }
+} finally { Remove-Item Function:\Invoke-RestMethod }
+$result=@{passed=$true;instance_isolation=$true;controller_identity=$true;notification_baseline_and_bound=$true;unconfirmed_exit_guard=$true;repair_decline_preserves_data=$true;repair_keeps_backup=$true;repair_failure_rolls_back=$true;test_root=$testRoot}
 $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $testRoot 'acceptance-result.json') -Encoding UTF8
 $result | ConvertTo-Json

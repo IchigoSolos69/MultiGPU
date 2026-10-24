@@ -1,0 +1,324 @@
+[
+  {
+    "id": "e2e",
+    "name": "E2E Networks / TIR",
+    "parent_vendor": "E2E Networks",
+    "category": "regional-cloud",
+    "training_mode": "Custom GPU VMs, notebooks and training jobs",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid compute; use current account quote",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Older starting prices may be superseded; verify storage, network and allocated hardware",
+    "sources": [
+      "https://www.e2enetworks.com/pricing",
+      "https://docs.e2enetworks.com/docs/myaccount/gpu/getting-started/choose-gpu-card/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "yotta",
+    "name": "Yotta Shakti Cloud / Shakti Studio",
+    "parent_vendor": "Yotta",
+    "category": "regional-cloud",
+    "training_mode": "GPU VMs, clusters and managed fine-tuning",
+    "accelerator": "NVIDIA",
+    "free_offer": "introductory-credit",
+    "offer_notes": "Limited-period Studio offer advertises INR 10,000 credits",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Actual award, expiry and covered resources untested; no guaranteed runtime estimate",
+    "sources": [
+      "https://shakticloud.ai/pricing/",
+      "https://shakticloud.ai/shakti-studio-free-ai-cloud-credits/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "neysa",
+    "name": "Neysa Velocis",
+    "parent_vendor": "Neysa",
+    "category": "regional-cloud",
+    "training_mode": "GPU VM, container and bare-metal training",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid on-demand or reserved infrastructure",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "ROCm workloads need separate qualification; no universal free allowance established",
+    "sources": [
+      "https://neysa.ai/neysa-velocis/gpu-cloud-for-ai/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "krutrim",
+    "name": "Krutrim Cloud",
+    "parent_vendor": "Krutrim",
+    "category": "regional-cloud",
+    "training_mode": "Custom GPU instances and AI pods",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU configurations; fractional devices available",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Zero stopped-compute rate is not free running compute; storage costs require checking",
+    "sources": [
+      "https://www.olakrutrim.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "sify",
+    "name": "Sify CloudInfinit+AI",
+    "parent_vendor": "Sify",
+    "category": "enterprise-gpu",
+    "training_mode": "Training VMs, containers and bare metal",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid enterprise GPU-as-a-service",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Account-specific quote, access and lifecycle interfaces require validation",
+    "sources": [
+      "https://www.sifytechnologies.com/cloudinfinitai-gpu-as-a-service/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nxtgen",
+    "name": "NxtGen GPUaaS / SpeedCloud",
+    "parent_vendor": "NxtGen",
+    "category": "regional-cloud",
+    "training_mode": "Training instances and OpenShift clusters",
+    "accelerator": "NVIDIA / AMD / Intel Gaudi",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid dedicated accelerator infrastructure",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Some SKUs sold out; H200 order uses monthly or longer terms",
+    "sources": [
+      "https://nxtgen.com/gpu-as-a-service",
+      "https://speedcloud.nxtgen.com/speedForm.html"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cyfuture",
+    "name": "Cyfuture Cloud",
+    "parent_vendor": "Cyfuture",
+    "category": "regional-cloud",
+    "training_mode": "Custom GPU VMs and clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid; current product and knowledge-base prices conflict",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Verify actual console quote and bandwidth charges; no specific usable free grant established",
+    "sources": [
+      "https://cyfuture.cloud/gpu-as-a-service",
+      "https://cyfuture.cloud/kb/gpu/gpu-as-a-service-pricing-explained-along-with-cloud-storage-costs"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "acecloud",
+    "name": "AceCloud",
+    "parent_vendor": "AceCloud",
+    "category": "regional-cloud",
+    "training_mode": "GPU VMs and interconnected GPU clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "introductory-credit",
+    "offer_notes": "INR 20,000 / approximately USD 200 for 30 days; no card to claim; GPU explicitly included",
+    "interface": "Console/API; execution qualification pending",
+    "limits": "Exhaustion controls, monthly rental terms, actual award and capacity untested",
+    "sources": [
+      "https://acecloud.ai/faqs/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "indiaai",
+    "name": "IndiaAI Compute Portal",
+    "parent_vendor": "IndiaAI",
+    "category": "allocation-program",
+    "training_mode": "Approved training resources from empanelled suppliers",
+    "accelerator": "Host-dependent GPUs",
+    "free_offer": "subsidized-allocation",
+    "offer_notes": "Eligibility and approval-based subsidy; not universally free",
+    "interface": "Government allocation portal; actual host interface after approval",
+    "limits": "Uncovered costs remain payable; overlaps commercial suppliers; follow end-user policy",
+    "sources": [
+      "https://www.compute.indiaai.gov.in/login",
+      "https://compute.indiaai.gov.in/files/end-user-policy.pdf"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "replicate",
+    "name": "Replicate",
+    "parent_vendor": "Replicate",
+    "category": "managed-training",
+    "training_mode": "Eligible versioned trainers and model fine-tuning",
+    "accelerator": "Provider-selected NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid training API; trainer-specific outputs",
+    "interface": "Training REST API; status and cancellation",
+    "limits": "Model eligibility, output persistence and portable weights depend on trainer",
+    "sources": [
+      "https://replicate.com/docs/reference/http/",
+      "https://replicate.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "together",
+    "name": "Together AI",
+    "parent_vendor": "Together AI",
+    "category": "managed-training",
+    "training_mode": "Managed fine-tuning, post-training and GPU clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid; checkpoints downloadable; model-specific training minimums",
+    "interface": "Training API/SDK and cluster lifecycle",
+    "limits": "Recipe compatibility and training estimate needed; inference deployment adds separate costs",
+    "sources": [
+      "https://docs.together.ai/docs/fine-tuning/overview",
+      "https://docs.together.ai/reference/get-finetune-download",
+      "https://docs.together.ai/docs/gpu-clusters-overview",
+      "https://www.together.ai/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "fireworks",
+    "name": "Fireworks AI",
+    "parent_vendor": "Fireworks AI",
+    "category": "managed-training",
+    "training_mode": "Supervised, preference and reinforcement model training",
+    "accelerator": "Provider-managed GPUs",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid training; LoRA adapters downloadable in PEFT format",
+    "interface": "Training API and firectl",
+    "limits": "Supported models/methods constrain recipes; base model required for adapters",
+    "sources": [
+      "https://fireworks.ai/product/training",
+      "https://fireworks.ai/training"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "fal",
+    "name": "fal",
+    "parent_vendor": "fal",
+    "category": "managed-training",
+    "training_mode": "Image/video LoRA training and serverless Python",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid model-specific trainers; step billing and downloadable LoRA URLs",
+    "interface": "Trainer APIs and Python serverless SDK",
+    "limits": "Minimum training steps vary; generic long-running scripts need qualification",
+    "sources": [
+      "https://fal.ai/learn/devs/how-to-fine-tune-wan-with-the-api",
+      "https://github.com/fal-ai/fal/blob/main/README.md"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "northflank",
+    "name": "Northflank",
+    "parent_vendor": "Northflank",
+    "category": "gpu-cloud",
+    "training_mode": "GPU containers and one-off training jobs",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU; managed cloud or user-owned cloud",
+    "interface": "Container jobs, API and BYOC",
+    "limits": "Include CPU, RAM, storage and transfer; free app sandbox is not free GPU",
+    "sources": [
+      "https://northflank.com/docs/v1/application/gpu-workloads/gpus-on-northflank",
+      "https://northflank.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "koyeb",
+    "name": "Koyeb",
+    "parent_vendor": "Mistral AI",
+    "category": "gpu-cloud",
+    "training_mode": "GPU containers and Unsloth notebook training",
+    "accelerator": "NVIDIA",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Paid plans plus usage; application-based startup credits",
+    "interface": "Containers and hosted Jupyter/SSH",
+    "limits": "Older signup-credit page not proof of current award; shares parent with Mistral Compute",
+    "sources": [
+      "https://www.koyeb.com/tutorials/deploy-unsloth-on-koyeb-for-lightning-fast-llm-training",
+      "https://www.koyeb.com/pricing",
+      "https://www.koyeb.com/blog/koyeb-is-joining-mistral-ai-to-build-the-future-of-ai-infrastructure"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "huggingface",
+    "name": "Hugging Face Jobs / Spaces / AutoTrain",
+    "parent_vendor": "Hugging Face",
+    "category": "managed-training",
+    "training_mode": "Custom batch training and managed AutoTrain",
+    "accelerator": "NVIDIA / CPU",
+    "free_offer": "none-verified",
+    "offer_notes": "Hosted training paid; ZeroGPU demo allocation is not a general training grant",
+    "interface": "Jobs CLI/SDK, Spaces and AutoTrain",
+    "limits": "Compute Spaces creation has subscription conditions; verify runtime, storage and model export",
+    "sources": [
+      "https://huggingface.co/docs/hub/jobs-training",
+      "https://huggingface.co/docs/autotrain/en/cost",
+      "https://huggingface.co/docs/hub/spaces-overview"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "anaconda",
+    "name": "Anaconda Notebooks",
+    "parent_vendor": "Anaconda",
+    "category": "cpu-notebook",
+    "training_mode": "Small notebook experiments and data preparation",
+    "accelerator": "CPU/hardware unverified",
+    "free_offer": "cpu-notebook",
+    "offer_notes": "Core Free includes notebooks and 5 GB cloud storage",
+    "interface": "Hosted notebooks; account/runtime qualification pending",
+    "limits": "Runtime allocation and accelerator entitlement unverified; organization licensing conditions apply",
+    "sources": [
+      "https://www.anaconda.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "posit",
+    "name": "Posit Cloud",
+    "parent_vendor": "Posit",
+    "category": "cpu-notebook",
+    "training_mode": "RStudio CPU/statistical training; beta Jupyter",
+    "accelerator": "CPU",
+    "free_offer": "cpu-notebook",
+    "offer_notes": "Free and paid CPU plans; current allowance unverified",
+    "interface": "RStudio / beta Jupyter",
+    "limits": "25-hour figure found in 2021 history; Jupyter entitlement and manual file export require checking",
+    "sources": [
+      "https://docs.posit.co/cloud/guide/projects/",
+      "https://posit.cloud/plans",
+      "https://docs.posit.co/cloud/whats_new/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "mybinder",
+    "name": "mybinder.org",
+    "parent_vendor": "Project Jupyter / mybinder operators",
+    "category": "cpu-notebook",
+    "training_mode": "Tiny reproducibility and notebook smoke tests",
+    "accelerator": "CPU",
+    "free_offer": "ephemeral-cpu",
+    "offer_notes": "Public ephemeral CPU; not a durable training pool",
+    "interface": "Interactive notebooks only",
+    "limits": "1 GB guaranteed / 2 GB maximum; idle shutdown; six-hour or one-CPU-hour target",
+    "sources": [
+      "https://mybinder.readthedocs.io/en/latest/about/user-guidelines.html"
+    ],
+    "status": "researched-not-implemented"
+  }
+]

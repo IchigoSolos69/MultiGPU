@@ -84,7 +84,7 @@ class OnboardingTests(unittest.TestCase):
         self.assertFalse(list(self.root.glob("payload-*")))
         result = self.execute(notebook, self.root / "session")
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout[-1000:])
-        with zipfile.ZipFile(self.root / "session" / "multigpu-results.zip") as archive:
+        with zipfile.ZipFile(next((self.root / "session" / "multigpu-runs").glob("*/multigpu-results.zip"))) as archive:
             self.assertIn("checkpoint.json", archive.namelist())
             self.assertIn("export/model.json", archive.namelist())
 
@@ -129,12 +129,13 @@ class OnboardingTests(unittest.TestCase):
         runner.write_text("\n".join("".join(cell["source"]) for cell in document["cells"] if cell["cell_type"] == "code"), encoding="utf-8")
         result = subprocess.run([sys.executable, str(runner)], cwd=session, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout[-1000:])
-        checkpoint = load_checkpoint(session / "output" / "checkpoint.json")
+        output = next((session / "multigpu-runs").glob("*/output"))
+        checkpoint = load_checkpoint(output / "checkpoint.json")
         self.assertEqual(checkpoint["step"], 3)
         self.assertEqual(checkpoint["payload"]["weight"], 3)
-        first = json.loads((session / "output" / "events.jsonl").read_text().splitlines()[0])
+        first = json.loads((output / "events.jsonl").read_text().splitlines()[0])
         self.assertEqual(first["step"], 1)
-        self.assertTrue((session / "multigpu-results.zip").is_file())
+        self.assertTrue((output.parent / "multigpu-results.zip").is_file())
 
     def test_extracted_payload_is_supported_and_corruption_stops_before_training(self):
         spec = self.large_custom()
@@ -145,7 +146,7 @@ class OnboardingTests(unittest.TestCase):
         session.mkdir()
         with zipfile.ZipFile(payload) as archive:
             archive.extractall(session / "training-payload")
-        code = "".join(json.loads(notebook.read_text())["cells"][1]["source"])
+        code = next("".join(cell["source"]) for cell in json.loads(notebook.read_text())["cells"] if "EXPECTED_MANIFEST =" in "".join(cell["source"]))
         runner = session / "run.py"
         runner.write_text(code, encoding="utf-8")
         result = subprocess.run([sys.executable, str(runner)], cwd=session, capture_output=True, text=True, timeout=30)

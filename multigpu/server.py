@@ -64,7 +64,8 @@ def make_server(service, port=8765):
                 if url.path == "/api/hardware":
                     return self.send(200, service.hardware)
                 if url.path == "/api/draft":
-                    return self.send(200, {"draft": service.draft()})
+                    draft = service.draft()
+                    return self.send(200, {"draft": draft, "has_saved_draft": draft["has_saved_draft"]})
                 if url.path == "/api/diagnostics/logs":
                     return self.send(200, service.diagnostic_logs())
                 if len(parts) == 4 and parts[:2] == ["api", "providers"] and parts[3] == "setup":
@@ -119,7 +120,8 @@ def make_server(service, port=8765):
                 if parts == ["api", "settings"]:
                     return self.send(200, service.save_settings(raw))
                 if parts == ["api", "draft"]:
-                    return self.send(200, {"draft": service.save_draft(raw)})
+                    draft = service.save_draft(raw)
+                    return self.send(200, {"draft": draft, "has_saved_draft": draft["has_saved_draft"]})
                 if parts == ["api", "cache", "cleanup"]:
                     return self.send(200, service.clean_cache())
                 if parts == ["api", "datasets", "inspect"]:
@@ -130,7 +132,7 @@ def make_server(service, port=8765):
                     service.hardware = hardware_info()
                     return self.send(200, service.hardware)
                 if parts == ["api", "environment", "setup"]:
-                    return self.send(202, environment.start(raw.get("profile")))
+                    return self.send(202, environment.start(raw.get("profile"), device=raw.get("device")))
                 if len(parts) == 5 and parts[:3] == ["api", "environment", "tasks"] and parts[4] == "cancel":
                     return self.send(200, environment.cancel(parts[3]))
                 if parts == ["api", "desktop", "provider-signin"]:
@@ -164,6 +166,10 @@ def make_server(service, port=8765):
                         return self.send(200, service.import_output(parts[2], raw))
                     if parts[3] == "resume":
                         return self.send(200, service.resume(parts[2], raw.get("providers")))
+                    if parts[3] == "continue-guided":
+                        return self.send(200, service.continue_guided(parts[2], raw))
+                    if parts[3] == "finish-delivery":
+                        return self.send(200, service.finish_delivery(parts[2], raw))
                     if parts[3] == "export":
                         return self.send(200, service.export(parts[2], raw.get("output_dir")))
                     if parts[3] == "recover":
@@ -186,7 +192,13 @@ def make_server(service, port=8765):
                 self.error(exc)
 
         def error(self, exc):
-            service._log_provider_error(None, exc, "API request")
+            parts = urlsplit(self.path).path.strip("/").split("/")
+            jid = parts[2] if len(parts) >= 3 and parts[:2] == ["api", "jobs"] and len(parts[2]) == 32 and all(c in "0123456789abcdef" for c in parts[2]) else None
+            job = service.store.get("job", jid) if jid else None
+            stages = {"import": "result import", "export": "local export", "cancel": "provider cancellation", "relocate-inputs": "input relocation",
+                      "continue-guided": "guided continuation", "finish-delivery": "delivery recovery"}
+            stage = stages.get(parts[3], "API request") if len(parts) >= 4 else "API request"
+            service._log_provider_error(jid, exc, stage, job.get("provider_id") if job else None)
             status = 403 if isinstance(exc, PermissionError) else 404 if isinstance(exc, KeyError) else 400 if isinstance(exc, (ValueError, TypeError)) else 500
             detail = {"error": str(exc)}
             if isinstance(exc, ConnectorError):

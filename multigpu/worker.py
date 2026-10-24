@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -12,9 +13,10 @@ import threading
 import time
 import uuid
 
-from .artifacts import atomic_json, canonical_json, directory, load_checkpoint, write_checkpoint, export_artifacts, _check_path
+from .artifacts import atomic_json, canonical_json, directory, decode_checkpoint, write_checkpoint, export_artifacts, _check_path
 from .datasets import prepare_spec, load_dataset, fingerprint_for_spec
 from . import recipes
+from .notebook_runtime import RecoveryPersistenceError, mirror_checkpoint
 
 
 def _file_lock(handle, unlock=False):
@@ -127,17 +129,27 @@ class TrainingContext:
                 self.emit("heartbeat", checkpoint_step=self._checkpoint_step)
                 self._last_heartbeat = now
             if now - self._last_summary >= self.spec["summary_interval_seconds"]:
-                allowance = self.spec.get("allowance_observation") or {}
-                requested = (self.output_dir / "STOP").exists()
-                stalled = self.phase == "training" and now - self._last_progress >= 300
-                self.emit("summary", checkpoint_step=self._checkpoint_step,
-                          checkpoint_age_seconds=round(now - self._last_checkpoint, 3) if self._checkpoint_step is not None else None,
-                          remaining_session_seconds=round(max(0, self.spec["runtime_seconds"] - (now - self._started)), 3),
-                          active_gpu_count=None if self.spec["recipe"] == "custom" else int(self.gpu_index is not None),
-                          allowance_confidence=allowance.get("confidence", "not_metered" if allowance.get("source") == "local" else "unknown"),
-                          required_action="Waiting for a checkpoint and stop acknowledgment" if requested else
-                                          "Review worker logs: no training step was reported in five minutes" if stalled else None)
-                self._last_summary = now
+                self.summary()
+
+    def summary(self, terminal_status=None, required_action=None):
+        now = time.monotonic()
+        allowance = self.spec.get("allowance_observation") or {}
+        if required_action is None:
+            required_action = {"completed": "Verify and save the model files.",
+                               "paused": "Continue from the saved checkpoint; check provider compute before leaving.",
+                               "error": "Review the error and recover from the latest verified checkpoint."}.get(terminal_status)
+        if required_action is None and (self.output_dir / "STOP").exists():
+            required_action = "Waiting for a checkpoint and stop acknowledgment"
+        if required_action is None and self.phase == "training" and now - self._last_progress >= 300:
+            required_action = "Review worker logs: no training step was reported in five minutes"
+        self.emit("summary", summary_kind="terminal" if terminal_status else "periodic", worker_status=terminal_status,
+                  checkpoint_step=self._checkpoint_step,
+                  checkpoint_age_seconds=round(now - self._last_checkpoint, 3) if self._checkpoint_step is not None else None,
+                  remaining_session_seconds=round(max(0, self.spec["runtime_seconds"] - (now - self._started)), 3),
+                  active_gpu_count=None if terminal_status or self.spec["recipe"] == "custom" else int(self.gpu_index is not None),
+                  allowance_confidence=allowance.get("confidence", "not_metered" if allowance.get("source") == "local" else "unknown"),
+                  required_action=required_action)
+        self._last_summary = now
 
     def start_telemetry(self):
         def update():
@@ -181,11 +193,14 @@ class TrainingContext:
         with self._writer:
             envelope = {"job_id": self.spec.get("id"), "recipe": self.spec["recipe"], "recipe_version": self.spec["recipe_version"],
                         "fingerprint": self._fingerprint, "step": self.step, "total_steps": self.spec["steps"],
-                        "loss": self.loss, "elapsed_seconds": self.elapsed_seconds, "device": self.device, "payload": state}
+                        "loss": self.loss, "elapsed_seconds": self.elapsed_seconds, "device": self.device, "payload": state,
+                        "saved_at": datetime.now(timezone.utc).isoformat()}
             self.checkpoint_path = write_checkpoint(self.output_dir, envelope)
             self._checkpoint_step = self.step
             self._last_checkpoint = time.monotonic()
             self.emit("checkpoint", checkpoint_path=str(self.checkpoint_path))
+            if self.spec.get("recovery_dir"):
+                mirror_checkpoint(self.output_dir, self.spec)
             return self.checkpoint_path
 
     def maybe_checkpoint(self):
@@ -207,7 +222,15 @@ def run(spec: dict, output_dir: Path) -> dict:
     try:
         ownership = WorkerLock(output_dir, spec)
         validated = prepare_spec(spec)
-        resumed = load_checkpoint(Path(validated["resume_from"])) if validated.get("resume_from") else None
+        resumed = None
+        if validated.get("resume_from"):
+            resume_path = Path(validated["resume_from"]).absolute()
+            _check_path(resume_path)
+            with resume_path.open("rb") as handle:
+                resume_bytes = handle.read(64 * 1024 * 1024 + 1)
+            if validated.get("resume_sha256") and hashlib.sha256(resume_bytes).hexdigest() != validated["resume_sha256"]:
+                raise ValueError("The reviewed checkpoint changed; preview recovery again")
+            resumed = decode_checkpoint(resume_bytes)
         ctx = TrainingContext(validated, output_dir, resumed)
         ctx.start_telemetry()
         if validated["recipe"] == "image" and resumed and not Path(validated.get("weights_path") or "").is_file():
@@ -226,6 +249,11 @@ def run(spec: dict, output_dir: Path) -> dict:
             raise ValueError("Resume checkpoint does not match this recipe, dataset, or training configuration")
         if resumed and (type(ctx.step) is not int or not 0 <= ctx.step <= validated["steps"]):
             raise ValueError("Resume checkpoint has an invalid step")
+        if resumed and (resumed.get("job_id") != validated.get("id") or resumed.get("total_steps") != validated["steps"]):
+            raise ValueError("Resume checkpoint belongs to a different run or training target")
+        if validated.get("delivery_only"):
+            if validated["recipe"] == "custom" or not resumed or ctx.step != validated["steps"]:
+                raise ValueError("Finishing delivery requires a built-in recipe checkpoint at the complete training target")
         ctx.spec = validated
         ctx.phase = "training"
         if validated["recipe"] == "starter":
@@ -260,16 +288,25 @@ def run(spec: dict, output_dir: Path) -> dict:
                   "checkpoint_path": str(ctx.checkpoint_path) if ctx.checkpoint_path else None,
                   "export_path": str(ctx.export_path) if ctx.export_path else None}
         ctx.close()
+        ctx.summary(status)
         ctx.emit(status, **result)
         return result
     except Exception as exc:
-        result = {"status": "error", "error": str(exc), "step": ctx.step if ctx else 0,
+        recovery_failed = isinstance(exc, RecoveryPersistenceError)
+        status = "paused" if recovery_failed else "error"
+        result = {"status": status, "error": str(exc), "step": ctx.step if ctx else 0,
                   "total_steps": spec.get("steps"), "loss": ctx.loss if ctx else None,
                   "device": ctx.device if ctx else spec.get("device", "cpu"), "elapsed_seconds": ctx.elapsed_seconds if ctx else 0.0}
+        if recovery_failed and ctx:
+            result["checkpoint_path"] = str(ctx.checkpoint_path)
+            result["required_action"] = "Recovery storage could not be verified. Save the runtime-local checkpoint or repair the selected recovery folder before continuing."
         if ctx:
             ctx.close()
             try:
-                ctx.emit("error", **result)
+                if recovery_failed:
+                    ctx.emit("recovery_warning", detail=str(exc), checkpoint_path=result["checkpoint_path"])
+                ctx.summary(status, result.get("required_action"))
+                ctx.emit(status, **result)
             except (OSError, ValueError):
                 print(json.dumps({"type": "error", **result}), flush=True)
         elif ownership is not None:

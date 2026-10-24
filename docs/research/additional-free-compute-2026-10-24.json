@@ -1,0 +1,341 @@
+{
+  "researched_at": "2026-10-24",
+  "source_policy": "Official provider resources only; no live account qualification.",
+  "rows": [
+    {
+      "id": "saturn-cloud",
+      "name": "Saturn Cloud",
+      "parent_vendor": "Saturn Cloud",
+      "category": "notebook",
+      "training_mode": "Custom notebook and GPU training",
+      "accelerator": "NVIDIA GPUs; model depends on account and instance",
+      "free_offer": "Advertised 150 compute hours monthly, CPU/GPU, no card",
+      "offer_notes": "Official 150-hour announcement supersedes historical 30-hour tier. Actual GPU configuration allowance and capacity require account verification.",
+      "interface": "Hosted JupyterLab; automation qualification pending",
+      "limits": "Free-tier machine eligibility, runtime and actual remaining allocation require verification.",
+      "sources": [
+        "https://saturncloud.io/try/",
+        "https://saturncloud.io/blog/150-free-hours/",
+        "https://saturncloud.io/plans/hosted/"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "tencent-cloud-studio",
+      "name": "Tencent Cloud Studio",
+      "parent_vendor": "Tencent Cloud",
+      "category": "notebook",
+      "training_mode": "Custom projects and notebooks; framework qualification pending",
+      "accelerator": "CPU/GPU environments",
+      "free_offer": "20 initial machine-hours after account binding; 2 daily claimable units valid seven days",
+      "offer_notes": "Units are configuration-dependent, not universal GPU wall-clock hours. Bound account automatically bills after allowance depletion.",
+      "interface": "Browser IDE; integration and billing-limit interfaces documented",
+      "limits": "IDE closure may release resources after ten minutes; billing notifications can lag two hours. Requires Tencent account binding.",
+      "sources": [
+        "https://cloud.tencent.cn/product/cloudstudio",
+        "https://cloud.tencent.cn/document/faq/1039/131928"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "baidu-ai-studio",
+      "name": "Baidu AI Studio",
+      "parent_vendor": "Baidu",
+      "category": "notebook",
+      "training_mode": "Educational model training; arbitrary PyTorch qualification pending",
+      "accelerator": "NVIDIA notebook GPUs; actual configuration account-dependent",
+      "free_offer": "Free CPU, GPU activity points and level-dependent weekly notebook allowances",
+      "offer_notes": "Dynamic official honor-system documentation and older FAQs differ. Verify actual account benefits; paid A-coin compute is separate.",
+      "interface": "Browser notebooks and scripts; lifecycle API qualification pending",
+      "limits": "Identity, region, framework permission, current points-to-runtime conversion and output retrieval require testing.",
+      "sources": [
+        "https://ai.baidu.com/ai-doc/AISTUDIO/1kczvydw9",
+        "https://ai.baidu.com/ai-doc/AISTUDIO/1lu5r7wzw"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "huawei-modelarts-codelab",
+      "name": "Huawei ModelArts CodeLab",
+      "parent_vendor": "Huawei Cloud",
+      "category": "notebook",
+      "training_mode": "Short interactive model-development and training experiments",
+      "accelerator": "CPU/GPU; Ascend in selected examples",
+      "free_offer": "Free CodeLab experience; initial one-hour sessions with interactive renewal",
+      "offer_notes": "API distinguishes free DEFAULT CodeLab from billed NOTEBOOK instances. Regional access and GPU entitlement require qualification.",
+      "interface": "Browser CodeLab; ModelArts API identifies free instance type",
+      "limits": "One free CodeLab per user; resources/files may be released after 72 hours unused. Paid Notebook disks can continue billing.",
+      "sources": [
+        "https://www.huaweicloud.com/guide/productsdesc-bms_279b8061782b84076c77885fc8b739d6support1",
+        "https://support.huaweicloud.com/eu/api-modelarts/ListAllNotebooks.html",
+        "https://support.huaweicloud.com/intl/en-us/devtool-modelarts/devtool-modelarts_3495.html"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "modelscope-notebook",
+      "name": "ModelScope Notebook",
+      "parent_vendor": "Alibaba",
+      "category": "notebook",
+      "training_mode": "Custom notebook training and fine-tuning",
+      "accelerator": "NVIDIA A10 24 GB; 8-core/32 GB CPU",
+      "free_offer": "Initial 36 GPU hours; CPU free without total-time limit",
+      "offer_notes": "Initial finite GPU grant, not verified monthly renewal. Provider documentation and actual account grant need reconciliation.",
+      "interface": "JupyterLab, terminal and persistent workspace; assisted integration first",
+      "limits": "Account binding, identity, expiry, current runtime limits, networking and remaining allowance require verification.",
+      "sources": [
+        "https://modelscope.cn/docs/notebook/intro",
+        "https://github.com/modelscope/ms-cookbook/blob/main/content/chapters/chapter-04.md",
+        "https://www.modelscope.cn/posts/434742"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "amd-developer-cloud",
+      "name": "AMD Developer Cloud",
+      "parent_vendor": "AMD",
+      "category": "gpu-cloud",
+      "training_mode": "Custom training, fine-tuning and inference on ROCm",
+      "accelerator": "AMD Instinct MI300X; single or eight-GPU VMs",
+      "free_offer": "Approved developers receive initial $100 credit, generally expiring after 30 days",
+      "offer_notes": "Application and AMD AI Developer Program membership required. Allocation discretionary. Current dollar offer supersedes older 25-hour descriptions.",
+      "interface": "JupyterLab, SSH and prepared ROCm/PyTorch containers",
+      "limits": "Separate ROCm backend qualification needed. Complimentary-access payment requirements unverified; paid access requires payment details.",
+      "sources": [
+        "https://www.amd.com/en/developer/resources/cloud-access/amd-developer-cloud.html",
+        "https://developer.amd.com/resources/",
+        "https://www.amd.com/en/developer/resources/technical-articles/2025/how-to-get-started-on-the-amd-developer-cloud-.html"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "machine-dev",
+      "name": "machine.dev",
+      "parent_vendor": "machine.dev",
+      "category": "gpu-cloud",
+      "training_mode": "Custom GPU training through GitHub Actions",
+      "accelerator": "NVIDIA T4G, T4, L4, A10G, L40S; specialized accelerators also offered",
+      "free_offer": "$10 initial compute balance",
+      "offer_notes": "Signup says no card; legal terms require payment registration. Current docs use dollars; older pricing retains credits. Storage separately billed.",
+      "interface": "GitHub Actions workflows and provider GitHub App",
+      "limits": "Non-paying accounts: one concurrent runner, 30 minutes per job. Spot interruption requires checkpointing; disable optional auto top-up.",
+      "sources": [
+        "https://machine.dev/docs/signup/",
+        "https://machine.dev/docs/guides/workflow-setup/",
+        "https://machine.dev/docs/reference/faq/",
+        "https://machine.dev/terms-of-service/"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "akash-console",
+      "name": "Akash Console",
+      "parent_vendor": "Akash Network",
+      "category": "gpu-cloud",
+      "training_mode": "Custom Docker training workloads",
+      "accelerator": "Trial GPUs up to RTX 3090; higher-end GPUs require non-trial account",
+      "free_offer": "$1 trial credit valid 30 days; no card or crypto wallet",
+      "offer_notes": "Current quickstart supersedes old $10 announcement. Tiny grant suits integration tests, not a large training budget.",
+      "interface": "Console containers; Akash CLI and SDK automation paths",
+      "limits": "Trial deployment maximum 24 hours. Guide says deployments stop after credit exhaustion; persistence/export and provider stock need testing.",
+      "sources": [
+        "https://akash.network/docs/getting-started/quick-start/",
+        "https://akash.network/blog/introducing-credit-card-payments-in-akash-console/"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "thunder-compute",
+      "name": "Thunder Compute",
+      "parent_vendor": "Thunder Compute",
+      "category": "gpu-cloud",
+      "training_mode": "Custom model training and fine-tuning",
+      "accelerator": "Student credit restricted to NVIDIA A6000 or L40",
+      "free_offer": "$20 student credit automatically with eligible US university email",
+      "offer_notes": "US university students only; not worldwide or recurring monthly. Card requirement and credit expiry not stated on student page.",
+      "interface": "CLI/API; lifecycle integration requires qualification",
+      "limits": "Ordinary pay-as-you-go after credit depletion. Snapshot storage bills until deleted.",
+      "sources": [
+        "https://www.thundercompute.com/students",
+        "https://www.thundercompute.com/pricing"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "alibaba-pai-dsw",
+      "name": "Alibaba Cloud PAI-DSW",
+      "parent_vendor": "Alibaba",
+      "category": "major-cloud",
+      "training_mode": "Custom notebook training and fine-tuning",
+      "accelerator": "Specified NVIDIA A10/V100 and CPU instance types",
+      "free_offer": "750 compute-unit hours across three months for verified product-new users",
+      "offer_notes": "Normally 250 units per period; compute units are not GPU wall-clock hours. Offer region/account eligibility varies.",
+      "interface": "JupyterLab, WebIDE, terminal and native PAI APIs",
+      "limits": "Continued use after expiry or depletion bills automatically. Trial excludes unrelated PAI products; verify storage and transfer coverage.",
+      "sources": [
+        "https://free.aliyun.com/",
+        "https://help.aliyun.com/zh/pai/product-overview/pai-product-purchase-guidelines"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "ovhcloud",
+      "name": "OVHcloud Public Cloud",
+      "parent_vendor": "OVHcloud",
+      "category": "major-cloud",
+      "training_mode": "Native AI Training jobs, notebooks and GPU VMs",
+      "accelerator": "NVIDIA GPUs; account, region and service dependent",
+      "free_offer": "Worldwide site: US$200 credit for one month on first Public Cloud project",
+      "offer_notes": "Country offers vary. Official examples explicitly include GPU notebook and training usage; valid payment method required.",
+      "interface": "Native AI Training/Notebook services, API, CLI and SSH",
+      "limits": "Credit depletion triggers automatic payment-method billing. First-project eligibility, actual quota, expiry and ancillary costs require verification.",
+      "sources": [
+        "https://www.ovhcloud.com/en/public-cloud/free-trial/",
+        "https://www.ovhcloud.com/fr/public-cloud/free-trial/",
+        "https://docs.ovhcloud.com/en/guides/public-cloud/cross-functional/create-a-public-cloud-project"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "civo",
+      "name": "Civo",
+      "parent_vendor": "Civo",
+      "category": "major-cloud",
+      "training_mode": "Custom GPU VM or Kubernetes training",
+      "accelerator": "NVIDIA GPU instances in selected regions",
+      "free_offer": "$250 introductory credit; generally one month, legal terms specify 31 days",
+      "offer_notes": "Valid card required. Official FAQ has conflicting expiry descriptions. Broad service-credit wording does not prove a specific account's GPU quota.",
+      "interface": "Compute/Kubernetes API, CLI and infrastructure automation",
+      "limits": "Alerts and requested resource quotas are not proven cash caps. Credit expiry can affect invoicing; verify GPU allocation and overages.",
+      "sources": [
+        "https://www.civo.com/docs/faq",
+        "https://www.civo.com/legal/terms",
+        "https://www.civo.com/docs/compute/create-an-instance",
+        "https://www.civo.com/pricing"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "scaleway",
+      "name": "Scaleway",
+      "parent_vendor": "Scaleway",
+      "category": "major-cloud",
+      "training_mode": "Custom GPU VM training",
+      "accelerator": "NVIDIA L4, L40S, H100 and other instance families",
+      "free_offer": "€100 trial voucher for eligible new Professional accounts",
+      "offer_notes": "Payment method required. Reviewed offer does not explicitly establish GPU SKU coverage, GPU quota or voucher duration.",
+      "interface": "Instance API, CLI, Terraform and SSH",
+      "limits": "Credit exclusions, account approval, storage/IP charges and actual GPU entitlement must be verified before free-only classification.",
+      "sources": [
+        "https://www.scaleway.com/en/scaleway-vs-digitalocean/",
+        "https://www.scaleway.com/en/pricing/gpu/"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "ionos-cloud-gpu",
+      "name": "IONOS Cloud GPU VM",
+      "parent_vendor": "IONOS",
+      "category": "major-cloud",
+      "training_mode": "Custom GPU VM training",
+      "accelerator": "NVIDIA H200 GPU VMs",
+      "free_offer": "UK GPU signup advertises £200 initial credit for 30 days",
+      "offer_notes": "Full GPU access requires account activation, payment details and access token. Country offer varies; GPU credit applicability needs account verification.",
+      "interface": "Cloud API, tokens and VM SSH",
+      "limits": "Paid activation enables billing. Check credit scope, attached resource charges, GPU quota and overage controls.",
+      "sources": [
+        "https://cloud.ionos.co.uk/cloud-gpu-vm/sign-up",
+        "https://cloud.ionos.com/cloud-gpu-vm"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "sagemaker-studio-lab",
+      "name": "Amazon SageMaker Studio Lab",
+      "parent_vendor": "Amazon Web Services",
+      "category": "notebook",
+      "training_mode": "Custom notebook training for existing eligible customers",
+      "accelerator": "GPU runtime; CPU alternative",
+      "free_offer": "Existing users: GPU up to four hours daily; CPU up to eight hours daily",
+      "offer_notes": "Closed to new customers. Separate from paid SageMaker AI and Unified Studio.",
+      "interface": "User-launched JupyterLab; assisted checkpoint/export",
+      "limits": "Four-hour session maximum, 15 GB storage, 16 GB RAM; capacity not guaranteed. Phone verification/CAPTCHA may apply.",
+      "sources": [
+        "https://docs.aws.amazon.com/sagemaker/latest/dg/studio-lab-overview.html"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "intel-tiber-ai-cloud",
+      "name": "Intel Tiber AI Cloud",
+      "parent_vendor": "Intel",
+      "category": "gpu-cloud",
+      "training_mode": "Training/fine-tuning on Intel Gaudi or compatible Intel hardware",
+      "accelerator": "Intel Gaudi2 and other account-dependent Intel accelerators",
+      "free_offer": "Paid or coupon-conditional; no broad recurring free training allowance verified",
+      "offer_notes": "Current Gaudi guide asks for purchased credits or coupon. Older official free-access material does not establish current general availability.",
+      "interface": "SSH and cloud portal; framework-specific setup",
+      "limits": "Separate Gaudi/Intel backend qualification; CUDA-only recipes cannot be assumed compatible. Live account/credit entitlement untested.",
+      "sources": [
+        "https://developer.habana.ai/intel-ai-cloud/",
+        "https://cloud.intel.com/",
+        "https://www.intel.com/content/www/us/en/content-details/768461/intel-devcloud.html"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "hugging-face-jobs",
+      "name": "Hugging Face Jobs and Spaces",
+      "parent_vendor": "Hugging Face",
+      "category": "managed-training",
+      "training_mode": "Custom training scripts and Docker jobs; paid GPU Spaces",
+      "accelerator": "Remote CPU and NVIDIA GPU flavors",
+      "free_offer": "No general free Jobs compute verified; selected Spaces community GPU grants available",
+      "offer_notes": "ZeroGPU is short Gradio demo execution, not generic unattended training. CPU-basic compute Spaces creation requires subscription despite zero hourly hardware price.",
+      "interface": "hf CLI, huggingface_hub SDK and Jobs HTTP API",
+      "limits": "Pay-as-you-go Jobs; prepaid/billing requirements. PRO/organization subscription for CPU-basic compute Spaces; static Spaces free. Free ZeroGPU hosting exception applies.",
+      "sources": [
+        "https://huggingface.co/docs/hub/jobs-overview",
+        "https://huggingface.co/docs/hub/jobs-training",
+        "https://huggingface.co/docs/hub/spaces-overview",
+        "https://huggingface.co/docs/huggingface_hub/main/guides/manage-spaces",
+        "https://huggingface.co/docs/hub/spaces-gpus",
+        "https://huggingface.co/docs/hub/spaces-zerogpu"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "amd-research-academic-cloud",
+      "name": "AMD Research and Academic Cloud",
+      "parent_vendor": "AMD",
+      "category": "allocation-program",
+      "training_mode": "Proposal-based academic AI/HPC research",
+      "accelerator": "AMD Instinct GPUs and EPYC CPUs; allocation dependent",
+      "free_offer": "Approved research/academic cloud access up to one year based on proposal",
+      "offer_notes": "Separate allocation program, not another automatic Developer Cloud signup credit. Approval and intended research determine resources.",
+      "interface": "Approved cloud access; environment and connection terms allocation dependent",
+      "limits": "Proposal eligibility, dates, accelerator architecture, permitted workloads and ancillary coverage require award-level verification.",
+      "sources": [
+        "https://www.amd.com/en/developer/resources/cloud-access.html"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "google-tpu-research-cloud",
+      "name": "Google TPU Research Cloud",
+      "parent_vendor": "Google",
+      "category": "allocation-program",
+      "training_mode": "Open machine-learning research training",
+      "accelerator": "Google Cloud TPUs",
+      "free_offer": "No-charge TPU allocations for accepted research projects",
+      "offer_notes": "Application-based, not universal GPU access. Current Google Research directory still advertises program; archived associated repository does not establish closure.",
+      "interface": "Cloud TPU research allocation; JAX, TensorFlow or PyTorch/XLA adaptation",
+      "limits": "Recipients expected to publish/share research and feedback. Ancillary VM, storage, networking and allocation duration need award-level verification.",
+      "sources": [
+        "https://sites.research.google/trc/",
+        "https://research.google/resources/"
+      ],
+      "status": "researched-not-implemented"
+    }
+  ]
+}

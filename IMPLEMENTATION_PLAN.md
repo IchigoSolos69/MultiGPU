@@ -1,5 +1,63 @@
 # MultiGPU user journey implementation plan
 
+## Official-source research and documentation: 24 October 2026
+
+The completed [provider audit](docs/PROVIDER_RESEARCH.md) separates free GPU, conditional GPU, recurring/introductory credits, free CPU, paid compute and existing hardware. The expanded README documents the current implementation and operating limits. This documentation update does not reship the 0.4.3 binary.
+
+Follow-up implementation must synchronize directory tags/filters and admission with that audit: treat Paperspace free availability as unverified; retain free CPU services without implying free GPU; separate Modal recurring credits from Lightning starting credits; preserve Databricks conditions and Codespaces workload restrictions; keep unknown hardware, allowance and billing evidence unknown. Qualify accounts and costs before enabling a new automatic mode.
+
+## Version 0.4.3: Modal compute after notebook retirement
+
+- Keep Modal's Functions/Volumes connector and stable provider ID; label it Modal.
+- Remove the retired hosted-notebook launch, payload and guided-fallback routes.
+- Explain the shutdown before setup; preserve billing admission and saved result import/recovery.
+- Verify stale saved jobs, direct download endpoints, free-only rejection and paid compute eligibility; rebuild the Windows installer with accurate provider guidance.
+
+## Version 0.4.2: training-to-delivery fixes
+
+Delivered on 24 October 2026: Windows installer, 224 passing Python tests, eight browser suites, exact-payload/native acceptance and real RTX 5050 CUDA qualification. See VALIDATION.md for evidence and the remaining live-provider and clean-install gates.
+
+Implementation follows the real local/Modal/Colab walkthrough on 23–24 October:
+
+- Job-scoped notebook payloads and subprocesses; reruns resume verified progress
+  or reuse completed exports. Result archives exclude backup exports and locks.
+- Optional explicitly mounted Drive recovery; hash-verified committed checkpoint
+  copies, preserved history, and worker pause on configured storage failure.
+- Preview-bound assisted continuation and finishing built-in evaluation/export
+  from full-target checkpoints, without more optimizer updates.
+- Independent early admission blockers, exact frozen Modal allocation, separate
+  physical-GPU/CUDA readiness, and device-aware environment preparation.
+- Validated imported history and provenance, terminal/import summaries, readable
+  import previews, cleared errors and completed-session delivery surfaces.
+- Saved-draft presence, secondary repeat export, bounded Modal progress/history
+  collection, and retained credential, target and cleanup protections.
+
+Qualification is recorded in VALIDATION.md. Local tests and generated notebook
+execution do not certify live Modal billing or a Colab-managed GPU runtime.
+
+## Version 0.4.1: consistent provider setup
+
+Fix the contradictory Kaggle screens reported on 23 October 2026:
+
+- Refresh readiness once for each completed matching installation, including
+  completion already consumed by dashboard polling. Installation alone cannot
+  verify an account or bypass a missing tool check.
+- Apply account results to the current provider object. Retain the newest
+  timestamped observation across delayed dashboard responses; accept newer
+  failed checks and keep account verification separate from training allowance.
+- Update read-only identity, allowance and check time while preserving focused
+  fields and edits made during a check. Use the observed native Kaggle username
+  when no username is configured. Preserve an explicitly entered zero cap.
+- Allow one account check per provider at a time, including after closing and
+  reopening setup. Show rejected checks without inventing new verification.
+- Refresh overview/directory status when setup closes and on explicit refresh,
+  including when the activating button retains focus.
+
+Release gates: response-order browser regressions, existing setup/journey
+checks, the 21 affected Python tests, and a rebuilt Windows payload smoke test.
+Record outcomes in VALIDATION.md. Preserve the installed workspace; live cloud
+training, quota exhaustion and billing qualification remain separate work.
+
 ## Version 0.4: complete-journey reliability
 
 Implemented after the end-to-end review, for beginners and experienced trainers equally:

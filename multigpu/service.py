@@ -103,6 +103,7 @@ class Service:
 
     def draft(self):
         value = self.store.get("draft", "local", {"spec": {}, "wizard_step": 0})
+        value["has_saved_draft"] = bool(value.get("has_saved_draft", value.get("spec")))
         value.setdefault("spec", {}).update(free_only=True, trust_script=False)
         return value
 
@@ -113,7 +114,9 @@ class Service:
         spec = {k: v for k, v in value.get("spec", {}).items() if k not in ("preview_digest", "id", "attempt_id")}
         spec.update(free_only=True, trust_script=False)
         extras = {key:value[key] for key in ("primary", "fallbacks", "dataset_mode", "dataset_report") if key in value}
-        return self.store.put("draft", "local", {**extras, "schema_version": 1, "spec": spec, "wizard_step": max(0, min(3, int(value.get("wizard_step", 0))))})
+        meaningful = bool(value.get("spec"))
+        return self.store.put("draft", "local", {**extras, "schema_version": 1, "spec": spec, "has_saved_draft": meaningful,
+                                                "wizard_step": max(0, min(3, int(value.get("wizard_step", 0))))})
 
     def settings(self):
         return {"desktop_notifications": False, **self.store.get("settings", "local", {"output_dir": str(self.root / "exports"), "summary_interval_seconds": 300})}
@@ -290,6 +293,7 @@ class Service:
             from .prediction import inference_capability
             job["inference"] = inference_capability(Path(job["export_path"]))
         job.setdefault("inference", {"supported": False, "reason": "Verify and export the model before prediction.", "features": [], "classes": []})
+        job["guided_providers"] = self._guided_options(job)
         job["allowed_actions"] = self._allowed_actions(job)
         return job
 
@@ -324,12 +328,23 @@ class Service:
         if status in TERMINAL:
             if job.get("execution_mode") == "guided" and stopped and idle:
                 actions.append("import")
-                if job.get("step", 0) < job["spec"]["steps"]:
+                if job.get("step", 0) < job["spec"]["steps"] and next(p for p in CATALOG if p["id"] == job["provider_id"])["capabilities"].get("notebook_bundle"):
                     actions.append("bundle")
             checkpoint_step = (job.get("checkpoint") or {}).get("step", job.get("step", 0))
-            resumable = (self.jobs_root / job["id"] / "checkpoint.json").exists() or self._pristine_pause(job)
+            checkpoint_exists = (self.jobs_root / job["id"] / "checkpoint.json").is_file()
+            resumable = checkpoint_exists or self._pristine_pause(job)
             if status in ("paused", "interrupted", "error") and checkpoint_step < job.get("total_steps", job["spec"]["steps"]) and resumable and stopped and idle:
-                actions.append("resume")
+                if self._resource_preview(job, job["spec"]["providers"])["eligible"]:
+                    actions.append("resume")
+                if self._resource_preview(job, ["local"])["eligible"]:
+                    actions.append("resume-local")
+            if stopped and idle and checkpoint_exists:
+                if checkpoint_step < job["spec"]["steps"] and self._guided_options(job):
+                    actions.append("continue-guided")
+                if checkpoint_step == job["spec"]["steps"] and job["spec"]["recipe"] in ("starter", "pytorch", "image"):
+                    internal = self.jobs_root / job["id"] / "export" / "manifest.json"
+                    if not internal.is_file() or job.get("worker_status") == "error":
+                        actions.append("finish-delivery")
             if stopped and idle and (self.jobs_root / job["id"] / "checkpoint.previous.json").exists():
                 actions.append("recover")
         if job.get("handle") or job.get("submission_intent"):
@@ -341,6 +356,15 @@ class Service:
             if job.get("inference", {}).get("supported"):
                 actions.append("predict")
         return actions
+
+    def _resource_preview(self, job, providers, guided=False):
+        others = [item for item in self.store.all("job") if item["id"] != job["id"]]
+        return preview({**job["spec"], "providers": providers, "guided": guided}, CATALOG,
+                       self.connections(), self.hardware, others)
+
+    def _guided_options(self, job):
+        return [pid for pid in job["spec"]["providers"]
+                if self._resource_preview(job, [pid], guided=True).get("preparation_eligible")]
 
     def save_job(self, job):
         job["updated_at"] = now()
@@ -357,7 +381,7 @@ class Service:
             report["actions"].append({"type": "wizard", "step": 0, "label": "Review training inputs"})
         if spec["recipe"] == "image" and not report.get("errors") and not report.get("dataset", {}).get("weights", {}).get("ready"):
             report["errors"].append("Prepare the image environment and verified pretrained weights before launching or preparing a notebook.")
-            report["actions"].append({"type": "environment", "profile": "image", "label": "Prepare image dependencies"})
+            report["actions"].append({"type": "environment", "profile": "image", "device": spec["device"], "label": "Prepare image dependencies"})
         input_errors = len(report["errors"])
         try:
             destination = Path(spec["output_dir"])
@@ -410,7 +434,7 @@ class Service:
         result["warnings"].extend(report.get("warnings", []))
         result["spec"] = spec
         identities = {pid: self.connections().get(pid, {}).get("config", {}) for pid in spec["providers"]}
-        digest = {"spec": spec, "fingerprint": report.get("fingerprint"), "selected_provider": result["selected_provider"], "execution_mode": result.get("execution_mode"), "resolved_device": result.get("resolved_device"), "accounts": identities}
+        digest = {"spec": spec, "fingerprint": report.get("fingerprint"), "selected_provider": result["selected_provider"], "execution_mode": result.get("execution_mode"), "resolved_device": result.get("resolved_device"), "resolved_resource": result.get("resolved_resource"), "accounts": identities}
         result["preview_digest"] = hashlib.sha256(json.dumps(digest, sort_keys=True, allow_nan=False).encode()).hexdigest()
         return result
 
@@ -426,6 +450,7 @@ class Service:
                 raise ValueError("; ".join(plan["preflight"]["errors"]))
             spec = plan["spec"]
             spec["fingerprint"] = plan["preflight"].get("fingerprint")
+            spec["resolved_resource"] = plan.get("resolved_resource")
             guided = plan.get("execution_mode") == "guided"
             if guided and not plan.get("preparation_eligible"):
                 raise ValueError("Guided preparation is blocked. Resolve the plan's requirements before continuing.")
@@ -435,6 +460,8 @@ class Service:
                 raise ValueError("This resource is a development helper, not a training backend.")
             jid = uuid.uuid4().hex
             spec["id"] = jid
+            if guided:
+                spec["attempt_id"] = uuid.uuid4().hex
             pid = plan["selected_provider"]
             if not pid:
                 raise ValueError("No reviewed resource can run or prepare this training. Resolve the plan's blockers.")
@@ -447,14 +474,14 @@ class Service:
                    "message": "Follow the in-app setup guide to run training in your provider account." if guided else "Preparing training environment.",
                    "plan": plan, "attempted_providers": [pid], "schema_version": 2,
                    "execution_mode": "guided" if guided else "automatic", "phase": "preparing", "connection_status": "connected",
-                   "submission_status": "prepared", "cleanup_status": "pending", "export_status": "pending",
+                   "submission_status": "prepared", "cleanup_status": "not_required" if guided else "pending", "export_status": "pending",
                    "fingerprint": plan["preflight"].get("fingerprint")}
             job["input_snapshot"] = {"fingerprint": job["fingerprint"], "metadata": plan["preflight"].get("dataset", {})}
             job["limit_enforcement"] = plan.get("limit_enforcement", "manual_unverified" if guided else "local" if pid == "local" else "provider_quota")
             self.save_job(job)
             if not guided:
                 self._start(jid)
-            self.store.put("draft", "local", {"spec": {}, "wizard_step": 0})
+            self.store.put("draft", "local", {"spec": {}, "wizard_step": 0, "has_saved_draft": False})
             return job
 
     @staticmethod
@@ -463,24 +490,30 @@ class Service:
         temp.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
         os.replace(temp, path)
 
-    def read_events(self, jid):
+    def read_events(self, jid, include_history=True):
         path = self.jobs_root / jid / "events.jsonl"
-        if not path.exists():
-            return []
         events = []
-        with path.open("rb") as raw:
-            size = path.stat().st_size
-            raw.seek(max(0, size - 2 * 1024 * 1024))
-            if raw.tell():
-                raw.readline()
-            lines = raw.read().decode("utf-8", errors="replace").splitlines()
-        for line in lines:
-            try:
-                event = json.loads(line)
-                if isinstance(event, dict):
-                    events.append(event)
-            except ValueError:
-                continue  # A live writer may not have finished its last line.
+        paths = [path]
+        if include_history:
+            paths.append(self.jobs_root / jid / "imported-history.jsonl")
+        for source in paths:
+            if not source.is_file():
+                continue
+            with source.open("rb") as raw:
+                size = source.stat().st_size
+                raw.seek(max(0, size - 2 * 1024 * 1024))
+                if raw.tell():
+                    raw.readline()
+                lines = raw.read().decode("utf-8", errors="replace").splitlines()
+            for line in lines:
+                try:
+                    event = json.loads(line)
+                    if isinstance(event, dict):
+                        events.append(event)
+                except ValueError:
+                    continue
+        if include_history:
+            events.sort(key=lambda item: item.get("timestamp", ""))
         return events
 
     def _start(self, jid):
@@ -489,7 +522,9 @@ class Service:
         thread.start()
 
     def _ingest(self, job):
-        events = self.read_events(job["id"])
+        # Imported observations are display history only, never worker liveness,
+        # progress mutations, or terminal acknowledgments for a new attempt.
+        events = self.read_events(job["id"], include_history=False)
         for event in events:
             job["last_worker_event_at"] = event.get("timestamp", job.get("last_worker_event_at"))
             if event.get("type") == "metric":
@@ -551,13 +586,27 @@ class Service:
             from .datasets import fingerprint_for_spec
             if job["spec"].get("fingerprint") and fingerprint_for_spec(job["spec"]) != job["spec"]["fingerprint"]:
                 raise ValueError("Inputs changed after preflight; preview this training plan again")
+            delivery = job.get("run_kind") == "delivery"
+            if not delivery:
+                current_plan = self._resource_preview(job, [job["provider_id"]])
+                resource = next((d.get("resolved_resource") for d in current_plan["decisions"] if d["provider_id"] == job["provider_id"]), None)
+                frozen = job["spec"].get("resolved_resource")
+                if frozen is not None and frozen != resource:
+                    raise ValueError("The selected compute resource changed after review. Preview a new continuation before launching.")
+                if frozen is None:
+                    job["spec"]["resolved_resource"] = resource
             observation = dict(self.connections().get(job["provider_id"], {}).get("quota") or {})
             observation.update(confidence=observation.get("confidence", "unknown"), snapshot=True,
                                source=observation.get("source", "local" if job["provider_id"] == "local" else "provider_connection"))
             observation.setdefault("observed_at", self.connections().get(job["provider_id"], {}).get("checked_at"))
             job["allowance_observation"] = observation
             job["spec"]["allowance_observation"] = observation
-            self._write_json(path / "spec.json", job["spec"])
+            execution_spec = dict(job["spec"])
+            if delivery:
+                recovery = job["delivery"]
+                execution_spec.update(device="cpu", delivery_only=True, resume_from=recovery["checkpoint"]["path"],
+                                      resume_sha256=recovery["checkpoint"]["sha256"], resolved_resource=recovery["resolved_resource"])
+            self._write_json(path / "spec.json", execution_spec)
             job.update(status="running", phase="preparing", message="Preparing the training environment.")
             self.save_job(job)
             if job["provider_id"] == "local":
@@ -567,7 +616,7 @@ class Service:
                 with (path / "worker.log").open("a", encoding="utf-8") as log:
                     process = subprocess.Popen([sys.executable, "-m", "multigpu.worker", "--spec", str(path / "spec.json"), "--output", str(path)], stdout=log, stderr=subprocess.STDOUT, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                     self.processes[jid] = process
-                    job.update(phase="training", local_pid=process.pid)
+                    job.update(phase="evaluating" if delivery else "training", local_pid=process.pid)
                     while process.poll() is None:
                         if self.closing.is_set():
                             (path / "STOP").touch()
@@ -894,6 +943,12 @@ class Service:
         candidate = {**job["spec"], "providers": remaining}
         plan = self.plan(candidate)
         if not plan["eligible"]:
+            assisted = next((d["provider_id"] for d in plan["decisions"] if d.get("preparation_eligible")), None)
+            if assisted:
+                state, checkpoint = self._checkpoint_snapshot(job)
+                job.update(pending_handoff={"provider_id": assisted, "checkpoint": checkpoint, "requires_review": True},
+                           phase="awaiting_handoff", message="Progress is saved. Review the assisted continuation to finish this same target in your selected provider notebook.")
+                self.save_job(job)
             return
         self._validate_checkpoint(job, path / "checkpoint.json")
         job["spec"]["resume_from"] = str(path / "checkpoint.json")
@@ -903,6 +958,8 @@ class Service:
             job.pop(key, None)
         job.update(submission_status="prepared", connection_status="connected")
         job["provider_id"] = plan["selected_provider"]
+        job["spec"]["resolved_resource"] = plan.get("resolved_resource")
+        job["spec"]["resume_sha256"] = hashlib.sha256((path / "checkpoint.json").read_bytes()).hexdigest()
         job["attempted_providers"] = [*attempted, job["provider_id"]]
         job.update(status="queued", message="Continuing the saved training target on another selected resource.")
         job.pop("worker_status", None)
@@ -920,6 +977,128 @@ class Service:
             (self.jobs_root / jid / "STOP").touch()
             job.update(status="pausing", message="Saving a checkpoint before stopping. Remote jobs may require the provider's stop control.")
             return self.save_job(job)
+
+    def _checkpoint_snapshot(self, job):
+        from .artifacts import _check_path
+        checkpoint = self.jobs_root / job["id"] / "checkpoint.json"
+        _check_path(checkpoint.absolute())
+        with checkpoint.open("rb") as handle:
+            contents = handle.read(64 * 1024 * 1024 + 1)
+        state = self._validate_checkpoint(job, checkpoint, contents=contents)
+        return state, {"path": str(checkpoint), "sha256": hashlib.sha256(contents).hexdigest(),
+                       "step": state["step"], "total_steps": state["total_steps"], "saved_at": state.get("saved_at")}
+
+    def _recovery_preview(self, job, action, provider_id=None):
+        if self.environment_busy:
+            raise ValueError("Wait for environment preparation before reviewing a continuation.")
+        if job["status"] not in TERMINAL:
+            raise ValueError("Stop training before reviewing a continuation.")
+        self._assert_stopped(job)
+        state, checkpoint = self._checkpoint_snapshot(job)
+        candidate = {**job["spec"]}
+        if state["recipe"] == "image":
+            candidate.update(weights_path=str(self.jobs_root / job["id"] / "assets" / "base_weights.pth"),
+                             weights_sha256=state["payload"]["weights_sha256"])
+        if action == "continue-guided":
+            if state["step"] >= state["total_steps"]:
+                raise ValueError("This checkpoint reached its target. Finish model delivery instead of preparing more training.")
+            choices = self._guided_options(job)
+            provider_id = provider_id or (job.get("pending_handoff") or {}).get("provider_id")
+            provider_id = provider_id or (job["provider_id"] if job["provider_id"] in choices else next(iter(choices), None))
+            if provider_id not in choices:
+                raise ValueError("Choose an eligible assisted provider selected for this run.")
+            candidate.update(providers=[provider_id], guided=True)
+        else:
+            if state["recipe"] not in ("starter", "pytorch", "image") or state["step"] != state["total_steps"]:
+                raise ValueError("Delivery recovery requires a full-target checkpoint from a built-in recipe.")
+            from .artifacts import IntegrityError, verify_export
+            for exported in (self.jobs_root / job["id"] / "export", Path(job["export_path"]) if job.get("export_path") else None):
+                if exported is None or not (exported / "manifest.json").is_file():
+                    continue
+                try:
+                    metadata = verify_export(exported).get("metadata", {})
+                except (IntegrityError, OSError):
+                    continue
+                if (metadata.get("job_id") == job["id"] and metadata.get("recipe") == state["recipe"]
+                        and metadata.get("fingerprint") == state["fingerprint"] and metadata.get("step") == state["total_steps"]):
+                    raise ValueError("Verified model files already exist. Save or download those results instead of running delivery recovery.")
+            provider_id = "local"
+            candidate.update(providers=["local"], guided=False, device="cpu")
+        plan = self.plan(candidate)
+        permitted = plan.get("preparation_eligible") if action == "continue-guided" else plan.get("eligible")
+        if not permitted or plan.get("selected_provider") != provider_id or plan["preflight"]["errors"]:
+            detail = "; ".join(plan["preflight"]["errors"]) or "; ".join(d["reason"] for d in plan["decisions"])
+            raise ValueError("Continuation is blocked: " + detail)
+        if plan["preflight"].get("fingerprint") != state["fingerprint"] or plan["spec"]["steps"] != state["total_steps"]:
+            raise ValueError("The reviewed inputs or training target differ from this checkpoint.")
+        target = {"steps": state["total_steps"], "recipe": state["recipe"], "recipe_version": state.get("recipe_version", 1)}
+        if state["recipe"] == "image":
+            target["epochs"] = job["spec"]["epochs"]
+        snapshot = {"action": action, "job_id": job["id"], "recovery_token": job["recovery_token"],
+                    "checkpoint_sha256": checkpoint["sha256"], "target": target, "plan_digest": plan["preview_digest"]}
+        digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        return {"preview_digest": digest, "provider_id": provider_id, "checkpoint": checkpoint, "target": target,
+                "plan": plan, "requires_stopped_confirmation": job.get("execution_mode") == "guided",
+                "optimizer_updates": 0 if action == "finish-delivery" else None}
+
+    @staticmethod
+    def _check_recovery_digest(raw, reviewed):
+        digest = raw.get("preview_digest")
+        if not isinstance(digest, str) or not hmac.compare_digest(digest, reviewed["preview_digest"]):
+            raise ValueError("This continuation preview is stale. Review the current checkpoint and plan again.")
+        if reviewed["requires_stopped_confirmation"] and raw.get("confirmed_stopped") is not True:
+            raise ValueError("Confirm that the previous provider notebook has stopped before preparing a new session.")
+
+    @staticmethod
+    def _retain_attempt(job):
+        job.setdefault("attempt_history", []).append({key: job.get(key) for key in
+            ("provider_id", "execution_mode", "submission_status", "submission_intent", "handle", "submission_resolution", "cleanup_status", "checkpoint")}
+            | {"attempt_id": job["spec"].get("attempt_id"), "at": now()})
+        for key in ("handle", "submission_intent", "submission_resolution", "remote_terminal", "worker_status", "stop_requested", "error_code", "pending_handoff", "delivery"):
+            job.pop(key, None)
+
+    def continue_guided(self, jid, raw):
+        with self.lock:
+            job = self.job(jid)
+            reviewed = self._recovery_preview(job, "continue-guided", raw.get("provider_id"))
+            if raw.get("preview") is True:
+                return reviewed
+            self._check_recovery_digest(raw, reviewed)
+            self._retain_attempt(job)
+            checkpoint = reviewed["checkpoint"]
+            job["spec"].update(guided=True, attempt_id=uuid.uuid4().hex, resume_from=checkpoint["path"],
+                               resume_sha256=checkpoint["sha256"], resolved_resource=reviewed["plan"].get("resolved_resource"))
+            if job["spec"]["recipe"] == "image":
+                job["spec"].update({key: reviewed["plan"]["spec"][key] for key in ("weights_path", "weights_sha256") if key in reviewed["plan"]["spec"]})
+            job.update(provider_id=reviewed["provider_id"], execution_mode="guided", run_kind="training", status="awaiting_user",
+                       phase="awaiting_handoff", submission_status="prepared", cleanup_status="not_required", connection_status="manual",
+                       step=checkpoint["step"], checkpoint={**checkpoint, "verified": True}, plan=reviewed["plan"],
+                       limit_enforcement="manual_unverified", message="Recovery verified. Download the continuation notebook and run the remaining target in your provider account.")
+            job["reviewed_checkpoint_sha256"] = checkpoint["sha256"]
+            job.pop("notebook_preparation", None)
+            job.pop("last_summary", None)
+            (self.jobs_root / jid / "STOP").unlink(missing_ok=True)
+            self._write_json(self.jobs_root / jid / "spec.json", job["spec"])
+            self.save_job(job)
+            return self.job(jid)
+
+    def finish_delivery(self, jid, raw):
+        with self.lock:
+            job = self.job(jid)
+            reviewed = self._recovery_preview(job, "finish-delivery")
+            if raw.get("preview") is True:
+                return reviewed
+            self._check_recovery_digest(raw, reviewed)
+            self._retain_attempt(job)
+            job["delivery"] = {"checkpoint": reviewed["checkpoint"], "requested_at": now(), "device": "cpu",
+                               "resolved_resource": reviewed["plan"].get("resolved_resource"), "optimizer_updates": 0}
+            job.update(provider_id="local", execution_mode="automatic", run_kind="delivery", status="queued", phase="preparing_delivery",
+                       submission_status="prepared", cleanup_status="not_required", connection_status="connected",
+                       message="Finishing evaluation and model export locally on CPU; training weights will not be updated.")
+            (self.jobs_root / jid / "STOP").unlink(missing_ok=True)
+            self.save_job(job)
+            self._start(jid)
+            return job
 
     def resume(self, jid, providers=None):
         with self.lock:
@@ -951,14 +1130,18 @@ class Service:
             job["spec"] = {**job["spec"], "providers": plan["spec"]["providers"], "guided": False}
             if checkpoint.exists():
                 job["spec"]["resume_from"] = str(checkpoint)
+                job["spec"]["resume_sha256"] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
             else:
                 job["spec"].pop("resume_from", None)
+                job["spec"].pop("resume_sha256", None)
             job.update(status="queued", provider_id=plan["selected_provider"], message="Resuming from the last committed checkpoint.")
             if job.get("submission_intent") or job.get("submission_resolution"):
                 job.setdefault("attempt_history", []).append({key: job.get(key) for key in ("submission_intent", "handle", "submission_status", "submission_resolution")})
-            for key in ("handle", "submission_intent", "remote_terminal", "stop_requested", "submission_resolution", "error_code"):
+            for key in ("handle", "submission_intent", "remote_terminal", "stop_requested", "submission_resolution", "error_code", "delivery", "pending_handoff"):
                 job.pop(key, None)
             job.update(submission_status="prepared", connection_status="connected", execution_mode="automatic")
+            job["run_kind"] = "training"
+            job["spec"]["resolved_resource"] = plan.get("resolved_resource")
             job["attempted_providers"] = [job["provider_id"]]
             job.pop("worker_status", None)
             self._write_json(self.jobs_root / jid / "spec.json", job["spec"])
@@ -984,16 +1167,18 @@ class Service:
             job["artifacts"] = manifest["files"]
             job["inference"] = inference_capability(result, manifest)
             job["export_verified_at"] = now()
+            if job.get("observation_source") == "notebook_import" and job.get("last_summary"):
+                job["last_summary"] = {**job["last_summary"], "required_action": "Model files are verified and saved locally."}
             job["phase"] = "completed"
             job.pop("export_error", None)
             job["message"] = "Model files verified and saved locally. Remote cleanup remains under your control."
             return self.save_job(job)
 
-    def _validate_checkpoint(self, job, checkpoint, delivery=False):
-        from .artifacts import checkpoint_assets, load_checkpoint, IntegrityError, validate_checkpoint_payload
+    def _validate_checkpoint(self, job, checkpoint, delivery=False, contents=None):
+        from .artifacts import checkpoint_assets, load_checkpoint, decode_checkpoint, IntegrityError, validate_checkpoint_payload
         from .datasets import load_dataset
         from .imports import frozen_dataset
-        state = load_checkpoint(checkpoint)
+        state = decode_checkpoint(contents) if contents is not None else load_checkpoint(checkpoint)
         data = frozen_dataset(job) if delivery else None
         if data is None:
             data = load_dataset(job["spec"])
@@ -1024,6 +1209,8 @@ class Service:
             if current.exists():
                 atomic_bytes(path / ("checkpoint.replaced-" + uuid.uuid4().hex + ".json"), current.read_bytes())
             atomic_bytes(current, previous.read_bytes())
+            job["spec"].update(resume_from=str(current), resume_sha256=hashlib.sha256(current.read_bytes()).hexdigest())
+            job.pop("reviewed_checkpoint_sha256", None)
             job.update(status="paused", step=state["step"], checkpoint={"path": str(current), "step": state["step"]}, message="Previous verified checkpoint restored. Review the recovered progress before resuming.")
             return self.save_job(job)
 
@@ -1083,9 +1270,15 @@ class Service:
             if raw.get("preview"):
                 return result
             job.update(result, message="Notebook results verified and imported locally.")
+            job.pop("reviewed_checkpoint_sha256", None)
             job.update(last_import_at=now(), last_import_verified=True)
+            imported_summary = job.pop("imported_summary", None)
+            job.pop("last_summary", None)
+            if imported_summary:
+                job["last_summary"] = imported_summary
             if result.get("checkpoint"):
                 job["spec"]["resume_from"] = result["checkpoint"]["path"]
+                job["spec"]["resume_sha256"] = result["checkpoint"]["sha256"]
                 if job["spec"]["recipe"] == "image":
                     from .artifacts import load_checkpoint
                     state = load_checkpoint(Path(result["checkpoint"]["path"]))
@@ -1128,6 +1321,10 @@ class Service:
                 if state["step"] >= state["total_steps"]:
                     raise ValueError("This checkpoint already reached the target. Export the finished model.")
                 job["spec"]["resume_from"] = str(checkpoint)
+                checksum = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+                if job.get("reviewed_checkpoint_sha256") and checksum != job["reviewed_checkpoint_sha256"]:
+                    raise ValueError("The checkpoint changed after continuation review. Review this continuation again before downloading.")
+                job["spec"]["resume_sha256"] = checksum
                 if state["recipe"] == "image":
                     job["spec"].update(weights_path=str(path / "assets" / "base_weights.pth"), weights_sha256=state["payload"]["weights_sha256"])
                 self._write_json(path / "spec.json", job["spec"])

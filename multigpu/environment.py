@@ -21,6 +21,25 @@ PROFILES = {
 }
 
 
+def resolve_preparation(profile, device, hardware):
+    if profile not in PROFILES:
+        raise ValueError("Choose cpu, image, cuda, kaggle, modal or lightning setup.")
+    if device not in (None, "auto", "cpu", "cuda"):
+        raise ValueError("Preparation device must be auto, cpu or cuda.")
+    effective = profile
+    resolved_device = None
+    if profile == "image":
+        requested = device or "auto"
+        cuda = requested == "cuda" or requested == "auto" and bool(hardware.get("gpus") or hardware.get("cuda_available"))
+        effective, resolved_device = ("cuda", "cuda") if cuda else ("image", "cpu")
+    elif profile in {"cpu", "cuda"}:
+        if device in {"cpu", "cuda"} and device != profile:
+            raise ValueError("The preparation profile conflicts with the selected device. Choose matching CPU or CUDA preparation.")
+        resolved_device = profile
+    return {"profile": profile, "effective_profile": effective, "device": resolved_device,
+            "requested_device": device or "auto"}
+
+
 class EnvironmentSetup:
     def __init__(self, service):
         self.service = service
@@ -46,9 +65,8 @@ class EnvironmentSetup:
                 raise KeyError("Setup task not found.")
             return dict(self.tasks[task_id])
 
-    def start(self, profile):
-        if profile not in PROFILES:
-            raise ValueError("Choose cpu, image, cuda, kaggle, modal or lightning setup.")
+    def start(self, profile, device=None):
+        preparation = resolve_preparation(profile, device, self.service.hardware)
         if sys.prefix == sys.base_prefix:
             raise ValueError("Start MultiGPU from its managed environment (start.cmd or .venv). Setup will not modify system or Codex Python.")
         with self.service.lock:
@@ -58,7 +76,7 @@ class EnvironmentSetup:
                 if any(t["status"] in ("queued", "running") for t in self.tasks.values()):
                     raise ValueError("An environment setup is already running.")
                 task_id = uuid.uuid4().hex
-                self.tasks[task_id] = {"id": task_id, "profile": profile, "status": "queued", "logs": [], "created_at": now(), "cancellable": True}
+                self.tasks[task_id] = {"id": task_id, **preparation, "status": "queued", "logs": [], "created_at": now(), "cancellable": True}
                 self.cancellations[task_id] = threading.Event()
                 self.service.store.put("environment_task", task_id, self.tasks[task_id])
             self.service.environment_busy = True
@@ -84,9 +102,9 @@ class EnvironmentSetup:
         return self.get(task_id)
 
     def _run(self, task_id, profile):
-        packages, index = PROFILES[profile]
-        if profile == "image" and self.service.hardware.get("cuda_available"):
-            packages, index = PROFILES["cuda"]
+        preparation = self.tasks[task_id]
+        effective_profile = preparation.get("effective_profile") or resolve_preparation(profile, preparation.get("requested_device"), self.service.hardware)["effective_profile"]
+        packages, index = PROFILES[effective_profile]
         uv = os.environ.get("MULTIGPU_UV")
         command = [uv, "pip", "install", "--python", sys.executable, *packages] if uv and Path(uv).is_file() else [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *packages]
         if index:

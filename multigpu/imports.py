@@ -2,15 +2,142 @@
 import json
 import hashlib
 import hmac
+import math
 import os
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import uuid
 import zipfile
 
-from .artifacts import (IntegrityError, _check_path, atomic_bytes, checkpoint_assets, directory,
+from .artifacts import (IntegrityError, _check_path, atomic_bytes, canonical_json, checkpoint_assets, directory,
                         export_artifacts, load_checkpoint, decode_checkpoint, validate_checkpoint_payload, verify_export)
+
+_HISTORY_BYTES = 2 * 1024 * 1024
+_HISTORY_EVENTS = 2500
+
+
+def _timestamp(value):
+    if not isinstance(value, str) or len(value) > 80:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.astimezone(timezone.utc).isoformat() if parsed.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def _import_history(base, job, step, checkpoint_sha256):
+    """Optional observations never drive lifecycle state or invalidate a model."""
+    warnings, events, reported_at = [], [], None
+    candidates = list(base.rglob("events.jsonl"))
+    if not candidates:
+        return events, warnings, reported_at
+    if len(candidates) != 1:
+        return events, ["Training history was skipped because the results contain multiple event logs."], None
+    try:
+        path = candidates[0]
+        _check_path(path)
+        with path.open("rb") as handle:
+            size = path.stat().st_size
+            if size > _HISTORY_BYTES:
+                handle.seek(size - _HISTORY_BYTES)
+                handle.readline(65537)
+                warnings.append("Training history exceeded 2 MiB; only its recent bounded tail was imported.")
+            content = handle.read(_HISTORY_BYTES)
+    except (OSError, ValueError):
+        return events, ["Training history could not be read; the verified model and checkpoint were retained."], None
+    rejected, seen = 0, set()
+    target = job["spec"]["steps"]
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value)
+    for raw in content.splitlines():
+        if len(raw) > 65536:
+            rejected += 1
+            continue
+        try:
+            item = json.loads(raw)
+            if not isinstance(item, dict):
+                raise ValueError("Invalid event")
+            kind = item.get("type")
+            if kind not in {"metric", "summary", "heartbeat", "checkpoint"}:
+                continue
+            timestamp, current = _timestamp(item.get("timestamp")), item.get("step")
+            if (item.get("job_id") != job["id"] or type(current) is not int or not 0 <= current <= step
+                    or item.get("total_steps") != target or timestamp is None
+                    or item.get("loss") is not None and not finite(item["loss"])):
+                raise ValueError("History identity or progress is invalid")
+            event = {"type": kind, "job_id": job["id"], "step": current, "total_steps": target,
+                     "timestamp": timestamp, "loss": item.get("loss")}
+            attempt = item.get("attempt_id")
+            if attempt is None or isinstance(attempt, str) and len(attempt) <= 128:
+                event["attempt_id"] = attempt
+            else:
+                raise ValueError("Invalid attempt")
+            if isinstance(item.get("device"), str) and len(item["device"]) <= 64:
+                event["device"] = item["device"]
+            if finite(item.get("elapsed_seconds")) and item["elapsed_seconds"] >= 0:
+                event["elapsed_seconds"] = item["elapsed_seconds"]
+            if kind == "summary":
+                for key in ("checkpoint_step", "checkpoint_age_seconds", "remaining_session_seconds", "active_gpu_count"):
+                    value = item.get(key)
+                    if value is None or finite(value) and value >= 0:
+                        event[key] = value
+                for key in ("allowance_confidence", "required_action"):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        from .connectors import redact_provider_output
+                        event[key] = redact_provider_output(value[:500])
+            if kind == "metric" and isinstance(item.get("metrics"), dict):
+                event["metrics"] = {str(key)[:80]: value for key, value in list(item["metrics"].items())[:30] if finite(value)}
+            identity = hashlib.sha256(canonical_json(event)).hexdigest()
+            if identity in seen:
+                continue
+            seen.add(identity)
+            event["history_id"] = identity
+            event["provenance"] = {"source": "notebook_import", "provider_id": job["provider_id"], "checkpoint_sha256": checkpoint_sha256}
+            events.append(event)
+            if kind == "checkpoint" and current == step:
+                reported_at = max(reported_at or timestamp, timestamp)
+        except (ValueError, TypeError, KeyError, OverflowError, RecursionError):
+            rejected += 1
+    if rejected:
+        warnings.append(f"Skipped {rejected} malformed or incompatible history records; model verification was unaffected.")
+    if len(events) > _HISTORY_EVENTS:
+        events = events[-_HISTORY_EVENTS:]
+        warnings.append("Training history was limited to the most recent 2500 valid observations.")
+    return events, warnings, reported_at
+
+
+def _publish_history(job_dir, events, warnings):
+    if not events:
+        return
+    path = job_dir / "imported-history.jsonl"
+    try:
+        existing = []
+        if path.is_file() and path.stat().st_size <= 4 * _HISTORY_BYTES:
+            _check_path(path)
+            for line in path.read_bytes().splitlines():
+                try:
+                    item = json.loads(line)
+                    if isinstance(item, dict) and item.get("history_id"):
+                        existing.append(item)
+                except (ValueError, RecursionError):
+                    pass
+        combined = {event["history_id"]: event for event in [*existing, *events]}
+        ordered = sorted(combined.values(), key=lambda item: item.get("timestamp", ""))[-_HISTORY_EVENTS:]
+        lines, size = [], 0
+        for event in reversed(ordered):
+            line = canonical_json(event) + b"\n"
+            if size + len(line) > _HISTORY_BYTES:
+                warnings.append("Saved training history was limited to its most recent 2 MiB.")
+                break
+            lines.append(line)
+            size += len(line)
+        atomic_bytes(path, b"".join(reversed(lines)))
+    except (OSError, ValueError, TypeError, RecursionError):
+        warnings.append("The model was imported, but optional training history could not be saved locally.")
 
 
 def frozen_dataset(job):
@@ -137,8 +264,13 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
                 pass
         digest_data = {"job": job["id"], "current": current_hash, "checkpoint": hashlib.sha256(checkpoint_bytes).hexdigest() if checkpoint_bytes is not None else None, "manifest": manifest, "step": step}
         digest = hashlib.sha256(json.dumps(digest_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        checkpoint_hash = hashlib.sha256(checkpoint_bytes).hexdigest() if checkpoint_bytes is not None else None
+        history, history_warnings, reported_at = _import_history(base, job, step, checkpoint_hash)
+        saved_at = _timestamp(state.get("saved_at")) if state else None
+        reported_at = saved_at or reported_at
         if preview_only:
-            return {"preview_digest": digest, "step": step, "current_step": current_step, "rollback_required": step < current_step, "status": "completed" if manifest else "paused", "verified": True}
+            return {"preview_digest": digest, "step": step, "current_step": current_step, "rollback_required": step < current_step, "status": "completed" if manifest else "paused", "verified": True,
+                    "warnings": history_warnings, "history_events": len(history), "checkpoint_reported_at": reported_at}
         if expected_digest is not None and (not isinstance(expected_digest, str) or not hmac.compare_digest(expected_digest, digest)):
             raise IntegrityError("Import preview is stale. Verify these results again before importing.")
         if step < current_step and not allow_rollback:
@@ -167,11 +299,24 @@ def import_results(source, job_dir, job, *, preview_only=False, allow_rollback=F
                 except IntegrityError:
                     atomic_bytes(job_dir / ("checkpoint.replaced-" + uuid.uuid4().hex + ".json"), current_bytes)
             atomic_bytes(job_dir / "checkpoint.json", checkpoint_bytes)
+        verified_at = datetime.now(timezone.utc).isoformat()
+        _publish_history(job_dir, history, history_warnings)
+        summaries = [event for event in history if event["type"] == "summary"]
+        last_summary = {**summaries[-1], "summary_kind": "import"} if summaries else None
+        elapsed = last_summary.get("elapsed_seconds") if last_summary else None
+        if elapsed is None and state:
+            elapsed = state.get("elapsed_seconds")
         return {"status": "completed" if manifest else "paused", "step": step,
+                "elapsed_seconds": elapsed,
                 "loss": state.get("loss") if state else manifest["metadata"].get("loss"),
                 "device": state.get("device") if state else manifest["metadata"].get("device"),
                 "evaluation": manifest.get("metadata", {}).get("evaluation", {}) if manifest else job.get("evaluation", {}),
-                "checkpoint": {"path": str(job_dir / "checkpoint.json"), "step": step} if checkpoint else None}
+                "checkpoint": {"path": str(job_dir / "checkpoint.json"), "step": step, "sha256": checkpoint_hash,
+                               "at": reported_at or verified_at, "verified_at": verified_at, "verified": True,
+                               "timestamp_source": "worker_reported" if reported_at else "local_verification", "location": "local"} if checkpoint else None,
+                "imported_at": verified_at, "observation_source": "notebook_import",
+                "history_provenance": {"source": "notebook_import", "imported_at": verified_at, "checkpoint_sha256": checkpoint_hash, "event_count": len(history)},
+                "imported_history_warning": " ".join(history_warnings), "imported_summary": last_summary}
     finally:
         if staging.exists():
             if staging.resolve().parent != job_dir.resolve():

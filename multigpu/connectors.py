@@ -23,7 +23,7 @@ import uuid
 import zipfile
 from urllib.parse import urlsplit, urlunsplit
 
-from .catalog import get_provider
+from .catalog import MODAL_NOTEBOOK_RETIREMENT, get_provider
 
 _MAX_STAGE_BYTES = 512 * 1024 * 1024
 
@@ -340,10 +340,10 @@ _RUNNER = '''import json, os
 from pathlib import Path
 from multigpu.worker import run
 base = Path(__file__).resolve().parent
-spec = json.loads((base / "spec.json").read_text(encoding="utf-8"))
+spec = json.loads(Path(os.environ.get("MULTIGPU_SPEC_PATH", base / "spec.json")).read_text(encoding="utf-8"))
 for key in ("dataset_path", "script_path", "resume_from", "weights_path"):
     if spec.get(key):
-        spec[key] = str(base / spec[key])
+        spec[key] = str(Path(spec[key]) if Path(spec[key]).is_absolute() else base / spec[key])
 out = Path(os.environ.get("MULTIGPU_OUTPUT_DIR", str(Path.cwd() / "output"))).resolve()
 out.mkdir(parents=True, exist_ok=True)
 state_file = out / "connector-state.json"
@@ -376,7 +376,7 @@ def _stage(spec_path, job_dir):
     stage = Path(tempfile.mkdtemp(prefix="payload-", dir=job_dir))
     (stage / "multigpu").mkdir(parents=True, exist_ok=True)
     (stage / "multigpu" / "__init__.py").write_text("", encoding="utf-8")
-    for filename in ("worker.py", "artifacts.py", "datasets.py", "recipes.py", "prediction.py"):
+    for filename in ("worker.py", "artifacts.py", "datasets.py", "recipes.py", "prediction.py", "notebook_runtime.py"):
         source = Path(__file__).parent / filename
         if not source.is_file() and filename in {"worker.py", "artifacts.py"}:
             raise ConnectorError(f"The application worker is incomplete: {filename} is missing.")
@@ -426,6 +426,9 @@ def _stage_for_provider(provider_id, spec_path, job_dir):
     spec["execution_provider"] = provider_id
     if provider_id != "local":
         spec["gpu_index"] = 0
+    resource = spec.get("resolved_resource", {})
+    if resource.get("provider_id") == provider_id and resource.get("device") in {"cpu", "cuda"}:
+        spec["device"] = resource["device"]
     _json_write(stage / "spec.json", spec)
     return stage, spec
 
@@ -450,22 +453,41 @@ def _safe_relative(name):
     return relative
 
 
-def _embedded(stage):
+def _embedded(stage, *, notebook=False):
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as archive:
         for path, relative in _payload_files(stage):
             archive.write(path, relative)
     encoded = base64.b64encode(payload.getvalue()).decode("ascii")
-    return ("import base64, io, os, runpy, zipfile\nfrom pathlib import Path\n"
-            "base = Path.cwd() / 'multigpu-payload'\nbase.mkdir(exist_ok=True)\n"
+    if notebook:
+        from .notebook_runtime import job_key
+        spec = json.loads((stage / "spec.json").read_text(encoding="utf-8"))
+        key = job_key(spec)
+        digest = hashlib.sha256(payload.getvalue()).hexdigest()
+        prefix = ("RECOVERY_DIR = globals().get('RECOVERY_DIR')  # The optional setup cell owns this choice.\n"
+                  "import base64, io, os, zipfile\nfrom pathlib import Path\n"
+                  "root = Path.cwd()\n"
+                  f"base = root / 'multigpu-runs' / {key!r} / {'payload-' + digest[:16]!r}\n"
+                  "for parent in [base, *base.parents]:\n"
+                  "    if parent.is_symlink() or (hasattr(parent, 'is_junction') and parent.is_junction()):\n"
+                  "        raise ValueError('Symbolic links are not accepted in notebook output folders')\n"
+                  "base.mkdir(parents=True, exist_ok=True)\n")
+        suffix = ("import sys\nsys.path.insert(0, str(base))\n"
+                  "from multigpu.notebook_runtime import launch_notebook\n"
+                  "MULTIGPU_NOTEBOOK_OUTPUT = launch_notebook(base, root, recovery_dir=RECOVERY_DIR)\n")
+    else:
+        prefix = ("import base64, io, os, runpy, zipfile\nfrom pathlib import Path\n"
+                  "base = Path.cwd() / 'multigpu-payload'\nbase.mkdir(exist_ok=True)\n")
+        suffix = ("import sys\nsys.path.insert(0, str(base))\n"
+                  "runpy.run_path(str(base / 'run.py'), run_name='__main__')\n")
+    return (prefix +
             f"archive = zipfile.ZipFile(io.BytesIO(base64.b64decode({encoded!r})))\n"
             "for item in archive.infolist():\n"
             "    target = (base / item.filename).resolve()\n"
             "    if not target.is_relative_to(base.resolve()) or ((item.external_attr >> 16) & 0o170000) == 0o120000:\n"
             "        raise ValueError('Unsafe bundle member')\n"
             "archive.extractall(base)\n"
-            "import sys\nsys.path.insert(0, str(base))\n"
-            "runpy.run_path(str(base / 'run.py'), run_name='__main__')\n")
+            + suffix)
 
 
 def needs_payload(spec, base_dir=None):
@@ -533,8 +555,11 @@ if manifest.get("format") != "multigpu-training-payload-v1" or not 0 < len(manif
     raise ValueError("Invalid training payload manifest")
 if sum(item["size_bytes"] for item in manifest["files"]) > 520 * 1024 * 1024:
     raise ValueError("Training payload exceeds its size limit")
-base = root / ("multigpu-payload-" + EXPECTED_MANIFEST[:12])
-base.mkdir(exist_ok=True)
+base = root / "multigpu-runs" / NOTEBOOK_JOB_KEY / ("payload-" + EXPECTED_MANIFEST[:16])
+for parent in [base, *base.parents]:
+    if parent.is_symlink() or (hasattr(parent, "is_junction") and parent.is_junction()):
+        raise ValueError("Symbolic links are not accepted in notebook output folders")
+base.mkdir(parents=True, exist_ok=True)
 seen = set()
 for item in manifest["files"]:
     relative = PurePosixPath(item["path"])
@@ -558,7 +583,8 @@ for item in manifest["files"]:
 if archive is not None:
     archive.close()
 sys.path.insert(0, str(base))
-runpy.run_path(str(base / "run.py"), run_name="__main__")
+from multigpu.notebook_runtime import launch_notebook
+MULTIGPU_NOTEBOOK_OUTPUT = launch_notebook(base, root, recovery_dir=RECOVERY_DIR)
 '''
 
 
@@ -572,17 +598,29 @@ def _notebook_document(source, spec, separate):
         dependencies = "Install the dependencies required by your trusted custom script in this runtime before running training."
     introduction = "# MultiGPU training\n" + dependencies + "\n"
     introduction += "Upload training-payload.zip alongside this notebook before running the first cell.\n" if separate else "This notebook contains the selected training code, inputs and any recovery checkpoint.\n"
-    save = ("import os, shutil\nfrom pathlib import Path\n"
-            "output = Path(os.environ.get('MULTIGPU_OUTPUT_DIR', str(Path.cwd() / 'output'))).resolve()\n"
-            "if not (output / 'checkpoint.json').is_file():\n    raise FileNotFoundError('Run training first; no checkpoint has been saved yet')\n"
-            "result = shutil.make_archive(str(output.parent / 'multigpu-results'), 'zip', root_dir=output)\n"
-            "print('Download this results file and import it into MultiGPU:', result)\n")
+    from .notebook_runtime import job_key
+    introduction += ("\nOptional durable recovery is off by default. In the setup cell, enable Colab Drive recovery and supply an existing folder, "
+                     "or set RECOVERY_DIR to your own already mounted folder. Failed configured recovery pauses training; old verified copies are kept.\n")
+    recovery_setup = ("# Optional Colab Drive recovery. This cell does not access Drive unless enabled.\n"
+                      "ENABLE_DRIVE_RECOVERY = False\nDRIVE_RECOVERY_FOLDER = ''  # Set an existing folder, e.g. /content/drive/MyDrive/MultiGPU\n"
+                      "RECOVERY_DIR = None  # Or set your own already mounted folder.\n"
+                      "if ENABLE_DRIVE_RECOVERY:\n"
+                      "    if not DRIVE_RECOVERY_FOLDER:\n        raise ValueError('Set DRIVE_RECOVERY_FOLDER to your existing recovery folder first')\n"
+                      "    from google.colab import drive\n    drive.mount('/content/drive')\n"
+                      "    from pathlib import Path\n    recovery = Path(DRIVE_RECOVERY_FOLDER).expanduser()\n"
+                      "    if not recovery.is_dir():\n        raise FileNotFoundError('Create the chosen recovery folder in Drive before enabling recovery')\n"
+                      "    RECOVERY_DIR = str(recovery.resolve())\n")
+    save = ("from pathlib import Path\nfrom multigpu.notebook_runtime import package_results\n"
+            f"output = Path.cwd() / 'multigpu-runs' / {job_key(spec)!r} / 'output'\n"
+            "result = package_results(output)\n"
+            "print('Download and import this verified results file:', result)\n"
+            "try:\n    from google.colab import files\nexcept ImportError:\n    pass\nelse:\n    files.download(str(result))\n")
     def cell(kind, content):
         value = {"cell_type": kind, "metadata": {}, "source": content.splitlines(True)}
         if kind == "code":
             value.update(execution_count=None, outputs=[])
         return value
-    return {"cells": [cell("markdown", introduction), cell("code", source),
+    return {"cells": [cell("markdown", introduction), cell("code", recovery_setup), cell("code", source),
                       cell("markdown", "## Save results\nAfter training completes or pauses, run this cell and download multigpu-results.zip. It contains the checkpoint, model files and required image weights. Keep it until the app verifies the import.\n"),
                       cell("code", save)],
             "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}},
@@ -596,9 +634,15 @@ def _remove_notebook_stage(stage, job_dir):
     shutil.rmtree(stage)
 
 
+def _require_notebook_provider(provider_id):
+    if not get_provider(provider_id)["capabilities"].get("notebook_bundle"):
+        detail = MODAL_NOTEBOOK_RETIREMENT if provider_id == "modal" else "This resource is not a notebook training backend."
+        raise ConnectorError(detail, code="notebook_retired" if provider_id == "modal" else "notebook_unavailable")
+
+
 def build_notebook(provider_id, config, spec_path, job_dir):
     """Return the actual runnable notebook; setup instructions remain in the app."""
-    get_provider(provider_id)
+    _require_notebook_provider(provider_id)
     _check_config(config)
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     separate = needs_payload(original, Path(spec_path).parent)
@@ -606,9 +650,10 @@ def build_notebook(provider_id, config, spec_path, job_dir):
     try:
         if separate:
             digest = hashlib.sha256(_training_manifest(stage)).hexdigest()
-            source = "EXPECTED_MANIFEST = " + repr(digest) + "\n" + _EXTERNAL_PAYLOAD_RUNNER
+            from .notebook_runtime import job_key
+            source = "RECOVERY_DIR = globals().get('RECOVERY_DIR')  # The optional setup cell owns this choice.\nNOTEBOOK_JOB_KEY = " + repr(job_key(spec)) + "\nEXPECTED_MANIFEST = " + repr(digest) + "\n" + _EXTERNAL_PAYLOAD_RUNNER
         else:
-            source = _embedded(stage)
+            source = _embedded(stage, notebook=True)
         from .artifacts import atomic_json
         target = Path(job_dir) / "training.ipynb"
         atomic_json(target, _notebook_document(source, spec, separate))
@@ -621,7 +666,7 @@ def build_notebook(provider_id, config, spec_path, job_dir):
 
 def build_notebook_payload(provider_id, config, spec_path, job_dir):
     """Return selected training inputs, never an instruction archive."""
-    get_provider(provider_id)
+    _require_notebook_provider(provider_id)
     _check_config(config)
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     if not needs_payload(original, Path(spec_path).parent):
@@ -644,24 +689,18 @@ def build_notebook_payload(provider_id, config, spec_path, job_dir):
 
 def build_bundle(provider_id, config, spec_path, job_dir):
     """Create a self-contained notebook ZIP; this does not start remote compute."""
-    get_provider(provider_id)
+    _require_notebook_provider(provider_id)
     _check_config(config)
-    stage, _ = _stage_for_provider(provider_id, spec_path, job_dir)
-    source = _embedded(stage)
-    notebook = dict(cells=[dict(cell_type="markdown", metadata={}, source=[
-        "# MultiGPU training bundle\nLaunch this notebook yourself on authorized compute. "
-        "It contains your selected data/script/checkpoint. Review before uploading. "
-        "The starter recipe uses CPU. Download output/ after completion."]),
-        dict(cell_type="code", execution_count=None, metadata={}, outputs=[], source=source.splitlines(True))],
-        metadata=dict(kernelspec=dict(display_name="Python 3", language="python", name="python3")),
-        nbformat=4, nbformat_minor=5)
+    stage, spec = _stage_for_provider(provider_id, spec_path, job_dir)
+    source = _embedded(stage, notebook=True)
+    notebook = _notebook_document(source, spec, False)
     (stage / "training.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
     (stage / "README.md").write_text(
         "Extract training.ipynb from this ZIP, upload it, and run its cell.\n"
         "The notebook embeds worker.py, artifacts.py, spec.json and selected input files exactly once.\n"
         "Choose compute and configure billing directly with your provider.\n"
         "This bundle does not keep runtimes alive or connect them to a distributed cluster.\n"
-        "Create output/STOP to request a checkpoint and graceful pause.\n"
+        "Use the scoped output folder printed by the worker; its STOP file requests a graceful pause.\n"
         "Custom recipes need their dependencies installed and must be standalone Python scripts.\n"
         "Outputs remain with the provider until you download/import them.\n", encoding="utf-8")
     target = Path(job_dir) / "notebook-bundle.zip"
@@ -671,9 +710,19 @@ def build_bundle(provider_id, config, spec_path, job_dir):
     return target
 
 
+def _modal_resource(spec):
+    resource = spec.get("resolved_resource") or {}
+    if (resource.get("provider_id") != "modal" or resource.get("device") not in {"cpu", "cuda"}
+            or resource["device"] == "cuda" and (not isinstance(resource.get("gpu"), str) or not resource["gpu"].strip())
+            or resource["device"] == "cpu" and resource.get("gpu") is not None
+            or spec.get("recipe", "starter") == "starter" and resource["device"] != "cpu"):
+        raise ConnectorError("Preview this Modal resource again; its resolved CPU/GPU allocation is missing or invalid.", code="invalid_resource")
+    return dict(resource)
+
+
 def _paid_policy(config, spec):
     if spec.get("free_only", config.get("free_only", True)):
-        raise ConnectorError("Automatic free-only execution is blocked for this credit-backed provider: this app cannot independently verify an enforceable zero-spend cap. Follow the in-app notebook guide or explicitly choose paid execution with native billing controls.")
+        raise ConnectorError("Automatic free-only execution is blocked for this credit-backed provider: this app cannot independently verify an enforceable zero-spend cap. Choose local compute or another assisted notebook provider, or explicitly choose paid execution with native billing controls.")
     if config.get("budget_confirmed") is not True or config.get("entitlement_confirmed") is not True:
         raise ConnectorError("Confirm your provider entitlement and configure native billing controls before authorizing paid execution. These confirmations are user assertions, not a verified free allowance.")
     limit, cap = config.get("native_spend_limit"), spec.get("paid_cap")
@@ -762,9 +811,10 @@ def _prepare(provider_id, config, spec_path, job_dir):
                       quota=quota, runtime_seconds=admission["runtime_seconds"], timeout_seconds=admission["timeout_seconds"])
     elif provider_id == "modal":
         _paid_policy(config, spec)
+        resource = _modal_resource(spec)
         intent.update(identity=_modal_identity(config), app_name="multigpu-" + attempt,
                       volume="multigpu-" + attempt, control="multigpu-control-" + attempt,
-                      environment=str(config.get("environment") or "main"), requested_gpu=config.get("gpu"))
+                      environment=str(config.get("environment") or "main"), requested_gpu=resource.get("gpu"), resolved_resource=resource)
     elif provider_id == "lightning":
         _paid_policy(config, spec)
         _lightning_consent(config)
@@ -925,6 +975,9 @@ def _submit(provider_id, config, spec_path, job_dir, intent=None):
 
 
 def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
+    resource = _modal_resource(spec)
+    if intent.get("resolved_resource") != resource or intent.get("requested_gpu") != resource.get("gpu"):
+        raise ConnectorError("The saved Modal intent differs from the reviewed resource; preview again before launching.", code="intent_mismatch")
     modal = _sdk("modal", "modal")
     name = intent["volume"]
     environment = intent.get("environment", "main")
@@ -942,8 +995,8 @@ def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
     app = modal.App(intent["app_name"])
     options = dict(image=image, volumes={"/output": volume}, serialized=True, include_source=False,
                    timeout=int(spec.get("runtime_seconds", 3600)) + 60)
-    if intent.get("requested_gpu"):
-        options["gpu"] = str(intent["requested_gpu"])
+    if resource["device"] == "cuda":
+        options["gpu"] = resource["gpu"]
 
     @app.function(**options)
     def train():
@@ -956,6 +1009,10 @@ def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
         from pathlib import Path
         handle = {**intent, "call_id": modal.current_function_call_id(), "state": "running", "submission_status": "confirmed"}
         control.put("handle", handle)
+        sys.path.insert(0, "/payload")
+        from multigpu.notebook_runtime import publish_progress
+        progress_cursor = {}
+        progress_lock = threading.Lock()
         done = threading.Event()
         def flush():
             last_commit = time.monotonic()
@@ -964,7 +1021,9 @@ def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
                     if control.get("pause", False):
                         Path("/output/STOP").touch()
                     if time.monotonic() - last_commit >= 30:
-                        volume.commit()
+                        with progress_lock:
+                            publish_progress("/output", progress_cursor)
+                            volume.commit()
                         last_commit = time.monotonic()
                 except Exception:
                     pass  # A transient control outage must not kill training.
@@ -983,13 +1042,15 @@ def _submit_modal(config, spec, stage, intent, on_mutation=lambda: None):
         finally:
             done.set()
             thread.join(timeout=5)
-            volume.commit()
+            with progress_lock:
+                publish_progress("/output", progress_cursor)
+                volume.commit()
 
     try:
         with app.run(detach=True, environment_name=environment):
             intent["app_id"] = app.app_id
             call = train.spawn()
-            handle = dict(**intent, call_id=call.object_id, state="queued", submission_status="confirmed")
+            handle = {**intent, "call_id": call.object_id, "state": "queued", "submission_status": "confirmed"}
             control.put("handle", handle)
             return handle
     except Exception as exc:
@@ -1113,7 +1174,36 @@ def _modal_snapshot(modal, handle, job_dir):
         volume = modal.Volume.from_name(handle["volume"], environment_name=handle.get("environment", "main"))
     except Exception as exc:
         raise ConnectorError(f"Modal Volume lookup failed ({type(exc).__name__}). Check native authentication and provider storage.") from None
-    for name in ("events.jsonl", "checkpoint.json", "connector-state.json"):
+    compact = False
+    progress_seen = False
+    try:
+        content = b"".join(volume.read_file("progress.json"))
+        progress_seen = True
+        if len(content) > 1024 * 1024:
+            raise ValueError("Oversized Modal progress snapshot")
+        progress = json.loads(content)
+        count = progress.get("history_count")
+        if progress.get("format") != "multigpu-progress-v1" or type(count) is not int or not 0 <= count <= 1_000_000:
+            raise ValueError("Invalid Modal progress snapshot")
+        cursor_path = Path(job_dir) / "modal-history-cursor.json"
+        cursor = json.loads(cursor_path.read_text()) if cursor_path.exists() else {}
+        first = cursor.get("history_count", 0) if cursor.get("volume") == handle["volume"] else 0
+        if type(first) is not int or not 0 <= first <= count:
+            first = 0
+        for number in range(first, count):
+            chunk = b"".join(volume.read_file(f"history/{number:08d}.jsonl"))
+            if len(chunk) > 32 * 1024 * 1024:
+                raise ValueError("Oversized Modal event history chunk")
+            _ingest_logs(chunk.decode("utf-8", errors="replace"), job_dir)
+            _json_write(cursor_path, {"volume": handle["volume"], "history_count": number + 1})
+        compact = True
+    except Exception as exc:
+        if progress_seen and (isinstance(exc, FileNotFoundError) or type(exc).__name__ in {"NotFoundError", "NotFound"}):
+            raise ConnectorError("Modal progress is not fully visible yet; the last local checkpoint was retained.", code="network", transient=True) from None
+        if not isinstance(exc, FileNotFoundError) and type(exc).__name__ not in {"NotFoundError", "NotFound"}:
+            raise _provider_error("Modal", exc, "progress snapshot") from None
+    names = ("checkpoint.json", "connector-state.json") if compact else ("events.jsonl", "checkpoint.json", "connector-state.json")
+    for name in names:
         try:
             content = b"".join(volume.read_file(name))
         except Exception as exc:

@@ -117,8 +117,8 @@ class ConnectorTests(unittest.TestCase):
         with zipfile.ZipFile(handle["bundle_path"]) as archive:
             self.assertEqual(set(archive.namelist()), {"training.ipynb", "README.md"})
             notebook = json.loads(archive.read("training.ipynb"))
-        payload = self.embedded_archive("".join(notebook["cells"][1]["source"]))
-        self.assertEqual(set(payload.namelist()), {"run.py", "spec.json", "multigpu/__init__.py", "multigpu/worker.py", "multigpu/artifacts.py", "multigpu/datasets.py", "multigpu/recipes.py", "multigpu/prediction.py"})
+        payload = self.embedded_archive(next("".join(cell["source"]) for cell in notebook["cells"] if "base64.b64decode" in "".join(cell["source"])))
+        self.assertEqual(set(payload.namelist()), {"run.py", "spec.json", "multigpu/__init__.py", "multigpu/worker.py", "multigpu/artifacts.py", "multigpu/datasets.py", "multigpu/recipes.py", "multigpu/prediction.py", "multigpu/notebook_runtime.py"})
 
     def test_bundled_worker_error_exits_nonzero(self):
         self.spec.write_text(json.dumps(dict(recipe="starter", steps=-1)), encoding="utf-8")
@@ -133,11 +133,12 @@ class ConnectorTests(unittest.TestCase):
         with zipfile.ZipFile(bundle) as archive:
             notebook = json.loads(archive.read("training.ipynb"))
         script = self.root / "cell.py"
-        script.write_text("".join(notebook["cells"][1]["source"]), encoding="utf-8")
+        script.write_text(next("".join(cell["source"]) for cell in notebook["cells"] if "base64.b64decode" in "".join(cell["source"])), encoding="utf-8")
         result = subprocess.run([sys.executable, str(script)], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads((self.root / "output" / "connector-state.json").read_text())["state"], "completed")
-        self.assertTrue(verify_export(self.root / "output" / "export")["files"])
+        output = next((self.root / "multigpu-runs").glob("*/output"))
+        self.assertEqual(json.loads((output / "connector-state.json").read_text())["state"], "completed")
+        self.assertTrue(verify_export(output / "export")["files"])
 
     def test_rebuilding_bundle_embeds_each_selected_dataset_once(self):
         dataset = self.root / "data.csv"
@@ -147,7 +148,7 @@ class ConnectorTests(unittest.TestCase):
             bundle = c.build_bundle("colab", {}, self.spec, self.root)
         with zipfile.ZipFile(bundle) as archive:
             notebook = json.loads(archive.read("training.ipynb"))
-        payload = self.embedded_archive("".join(notebook["cells"][1]["source"]))
+        payload = self.embedded_archive(next("".join(cell["source"]) for cell in notebook["cells"] if "base64.b64decode" in "".join(cell["source"])))
         self.assertEqual([name for name in payload.namelist() if name.startswith("assets/")], ["assets/dataset_path.csv"])
 
     def test_embedded_runner_rejects_zip_traversal(self):

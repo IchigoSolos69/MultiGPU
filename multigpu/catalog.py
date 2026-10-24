@@ -1,18 +1,22 @@
-"""Provider facts checked against official documentation on 2026-10-23.
+"""Provider facts checked on 2026-10-23; Modal availability reviewed 2026-10-24.
 
 Capabilities describe this application, not an account's entitlements.
 """
 from copy import deepcopy
 
+MODAL_NOTEBOOK_RETIREMENT = ("Modal hosted notebooks were retired on 23 October 2026. "
+                             "Modal Functions still support training. Use automatic Modal compute with your own account, "
+                             "or select another assisted notebook provider.")
+
 
 def _provider(id, name, kind, integration, free_summary, signup_url, docs_url,
-              setup_steps, restrictions, badges=()):
+              setup_steps, restrictions, badges=(), source_checked="2026-10-23"):
     automatic = id in {"kaggle", "modal", "lightning", "local"}
     return dict(id=id, name=name, kind=kind, integration=integration,
                 badges=list(badges), free_summary=free_summary,
                 description=free_summary, signup_url=signup_url, docs_url=docs_url,
                 setup_steps=setup_steps, restrictions=restrictions,
-                source_checked="2026-10-23", account_verified=False,
+                source_checked=source_checked, account_verified=False,
                 qualification="local_cpu_verified" if id == "local" else "live_account_unqualified",
                 capabilities=dict(implemented=automatic, submit=automatic,
                                   poll=automatic, collect=automatic,
@@ -20,7 +24,8 @@ def _provider(id, name, kind, integration, free_summary, signup_url, docs_url,
                                   stop_mode="cooperative" if id in {"local", "modal", "lightning"} else "provider_console",
                                   cancel=id == "modal", cancel_mode="immediate" if id == "modal" else "provider_console",
                                   exact_quota=id == "kaggle",
-                                  notebook_bundle=id != "local",
+                                  automatic_free_only=id in {"local", "kaggle"},
+                                  notebook_bundle=id not in {"local", "modal"},
                                   cross_provider_distributed=False))
 
 
@@ -62,17 +67,20 @@ CATALOG = [
                "If this coordinator is offline, the Studio may keep running. Native billing controls remain necessary.",
                "Free-only automatic launch is blocked until enforceable provider caps can be verified independently."],
               ["Native SDK", "Credit backed"]),
-    _provider("modal", "Modal Notebooks / compute", "gpu", "automatic",
+    _provider("modal", "Modal", "gpu", "automatic",
               "Starter includes monthly compute credits. GPU use requires a payment method; storage and egress have separate allowances.",
-              "https://modal.com/", "https://modal.com/docs/guide/notebooks",
-              ["Sign up with Modal and set native Workspace billing controls directly with Modal.",
+              "https://modal.com/", "https://modal.com/docs/guide/functions",
+              ["Review automatic free-only eligibility before signing in: this app cannot independently verify Modal's net spend limit, so automatic free-only launch stays blocked.",
+               "Sign up with Modal and configure Workspace usage budgets and the separate net spend limit directly with Modal.",
                "Install modal and authenticate with modal setup outside this app.",
                "Enter the expected workspace; the app compares it with native credentials. GPU allocation is confirmed only after provisioning.",
-               "This app submits a detached Modal Function with a persistent artifact Volume, rather than controlling notebook cells."],
-              ["A free plan does not prevent charges above included usage.",
-               "Free-only automatic launch is blocked until enforceable provider caps can be verified independently.",
+               "This app submits a detached Modal Function with a persistent artifact Volume."],
+              [MODAL_NOTEBOOK_RETIREMENT,
+               "A free plan does not prevent charges above included usage.",
+               "Workspace usage budgets apply before credits. The separate Workspace spend limit caps net charges after credits; Environment budgets only cover compute and exclude some Workspace charges.",
+               "MultiGPU cannot independently verify your net spend limit. Checkmarks record your assertion and never enable automatic free-only launch.",
                "Artifact Volumes remain in your Modal account after a run; manage retention there."],
-              ["Native SDK", "Credit backed"]),
+              ["Native SDK", "Credit backed"], source_checked="2026-10-24"),
     _provider("codespaces", "GitHub Codespaces", "cpu", "development",
               "Included personal development compute is CPU based; GPU machines are not generally available.",
               "https://github.com/features/codespaces", "https://docs.github.com/en/codespaces/developing-in-a-codespace/getting-started-with-github-codespaces-for-machine-learning",

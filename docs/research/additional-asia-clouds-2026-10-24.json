@@ -1,0 +1,149 @@
+[
+  {
+    "id": "sakura-koukaryoku",
+    "name": "Sakura Internet: Koukaryoku DOK, VRT and PHY",
+    "parent_vendor": "Sakura Internet",
+    "category": "major-cloud",
+    "training_mode": "GPU Docker tasks, JupyterLab notebooks, virtual machines and dedicated training",
+    "accelerator": "NVIDIA V100/H100; product-specific dedicated GPUs",
+    "free_offer": "conditional-credit",
+    "offer_notes": "DOK grants ¥3,000 introductory credit, advertised as approximately 50 V100 hours; card registration required.",
+    "interface": "Docker tasks and JupyterLab; GPU virtual machines; external provisioning automation requires qualification",
+    "limits": "V100 DOK task intake ends February 2027, service March 2027; VRT third-party use requires provider consent.",
+    "sources": [
+      "https://ai.sakura.ad.jp/lp/notebook/",
+      "https://manual.sakura.ad.jp/cloud/server/gpu-plan.html",
+      "https://ai.sakura.ad.jp/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "naver-cloud-gpu",
+    "name": "NAVER Cloud Platform: GPU Server and GPU Bare Metal",
+    "parent_vendor": "NAVER Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual servers and eight-GPU bare-metal training",
+    "accelerator": "Region-specific NVIDIA GPUs; A100 bare metal documented",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU products; no recurring free GPU allowance established.",
+    "interface": "Server console, APIs and CLI documentation; user-managed CUDA environments",
+    "limits": "Stopped GPU servers may remain billable; individual-member approval, regional capacity and account limits require verification.",
+    "sources": [
+      "https://guide.ncloud-docs.com/docs/en/server-overview",
+      "https://guide.ncloud-docs.com/docs/en/server-gpuserver-classic",
+      "https://guide.ncloud-docs.com/docs/en/server-baremetal-vpc"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "kakao-cloud-gpu",
+    "name": "KakaoCloud: GPU VMs and Kubeflow",
+    "parent_vendor": "KakaoCloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines, distributed PyTorch jobs and LLM fine-tuning",
+    "accelerator": "NVIDIA GPUs and MIG partitions; A100 examples documented",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid training-capable cloud; no recurring free GPU entitlement established.",
+    "interface": "SSH GPU VMs; Kubeflow notebooks, pipelines and Training Operator",
+    "limits": "Account quota, GPU node configuration, networking and supporting storage; MIG partitions expose partial GPU memory.",
+    "sources": [
+      "https://docs.kakaocloud.com/en/tutorial/machine-learning-ai/kubeflow-parallel-model",
+      "https://docs.kakaocloud.com/en/tutorial/machine-learning-ai/llm-tuning",
+      "https://docs.kakaocloud.com/en/tutorial/compute/vm-nvidia-gpu-setting",
+      "https://www.kakaocloud.com/services/virtual-machine/intro"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "nhn-cloud-gpu",
+    "name": "NHN Cloud: GPU Instance",
+    "parent_vendor": "NHN Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual servers for AI training",
+    "accelerator": "NVIDIA V100 documented; other enterprise configurations require account verification",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU compute; education credits explicitly exclude GPU Instance.",
+    "interface": "Documented GPU Instance console workflow; VM training environment",
+    "limits": "Exact contract and region govern billing; government-cloud pricing retains full stopped-instance charges; storage and network are separate.",
+    "sources": [
+      "https://docs.nhncloud.com/en/Compute/GPU%20Instance/en/overview/",
+      "https://docs.nhncloud.com/en/Compute/GPU%20Instance/en/console-guide/",
+      "https://edu.nhncloud.com/attend/detail/d7a29e2d-d742-45b6-a5eb-122dcdc3c84a",
+      "https://www.gov-nhncloud.com/kr/service/compute/gpu-instance"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "greennode-gpu",
+    "name": "GreenNode: GPU Instances",
+    "parent_vendor": "GreenNode",
+    "category": "major-cloud",
+    "training_mode": "GPU instances for model training and fine-tuning",
+    "accelerator": "NVIDIA H100/H200, L40S, A40 and RTX configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU cloud in Vietnam and Southeast Asia; no recurring free GPU allowance established.",
+    "interface": "Documented SSH, TCP and HTTP access to GPU instances",
+    "limits": "Configuration and regional stock; published monthly instance prices are not GPU-hour rates; contract and persistent-resource charges require verification.",
+    "sources": [
+      "https://greennode.ai/product/gpu-instances/",
+      "https://greennode.ai/en/blog/greennode-nvidia-h200-rtx-pro-6000-blackwell-ai-cloud"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "fpt-ai-factory",
+    "name": "FPT: AI Factory and GPU Cloud",
+    "parent_vendor": "FPT",
+    "category": "major-cloud",
+    "training_mode": "Self-service GPU VMs, GPU containers and notebooks for training",
+    "accelerator": "NVIDIA H100/H200, A30 and newer configuration-specific GPUs",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid compute; generic Try It Free messaging does not establish a fixed GPU trial amount or universal entitlement.",
+    "interface": "Self-service GPU VMs with root control; GPU containers and JupyterLab notebooks",
+    "limits": "Region and GPU capacity, persistent storage charges, exact account offer and lifecycle billing require qualification.",
+    "sources": [
+      "https://factory.fpt.ai/news/gpu-virtual-machine-is-now-available-with-on-demand-pricing-on-fpt-ai-factory",
+      "https://ai-docs.fptcloud.com/other/ai-notebook/overview",
+      "https://factory.fpt.ai/pricing",
+      "https://fptcloud.com/en/product/gpu-server-en/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "singtel-reai",
+    "name": "Singtel RE:AI GPU cloud",
+    "parent_vendor": "Singtel",
+    "category": "major-cloud",
+    "training_mode": "Enterprise GPU cloud for model training and fine-tuning",
+    "accelerator": "NVIDIA H100 and GB200 infrastructure documented",
+    "free_offer": "none-verified",
+    "offer_notes": "Operational sales-led enterprise GPUaaS; no public recurring free GPU allowance established.",
+    "interface": "Enterprise GPU cloud and workspaces; retail API and external automation qualification remain unverified",
+    "limits": "Sales contract, GPU allocation, regional eligibility and exact pricing; distinguish training compute from inference/token APIs.",
+    "sources": [
+      "https://www.singtel.com/content/dam/singtel/investorRelations/stockExchange/2025/SGX_ARLTSOtherDoc.pdf",
+      "https://www.singtel.com/about-us/investor-relations/annual-report-fy2025/digital-infraco-ceo-review",
+      "https://www.singtel.com/about-us/media-centre/news-releases/singtel-mistral-ai"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "taiwan-ai-cloud",
+    "name": "Taiwan AI Cloud: TWAI Cloud and GPU HPC",
+    "parent_vendor": "Taiwan AI Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines, distributed HPC training and fine-tuning",
+    "accelerator": "NVIDIA H100, A100 and V100 configurations",
+    "free_offer": "conditional-credit",
+    "offer_notes": "NTD 10,000 trial credit for up to 60 days, once per member; expansion beyond one GPU requires paid access.",
+    "interface": "GPU VMs; documented HPC Slurm and Singularity environments",
+    "limits": "Trial excludes Chinese-funded enterprises/institutions; exact GPU SKU eligibility unverified; project data may be deleted at termination.",
+    "sources": [
+      "https://www.twcloud.ai/ai-cloud/h100/",
+      "https://www.twcloud.ai/products-and-services/gpu-hpc-service/",
+      "https://www.twcloud.ai/ai-cloud/freetrials/",
+      "https://docs.twcloud.ai/docs/pricing/"
+    ],
+    "status": "researched-not-implemented"
+  }
+]

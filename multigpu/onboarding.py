@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import sys
 
-from .catalog import get_provider
+from .catalog import MODAL_NOTEBOOK_RETIREMENT, get_provider
 
 
 IMPORT_HELP = {
@@ -15,7 +15,6 @@ IMPORT_HELP = {
     "kaggle": ("https://www.kaggle.com/docs/notebooks", "Create a notebook, then use File > Import Notebook to select training.ipynb.", "Use Settings > Session options to choose the accelerator. Inspect current quota and keep the notebook private when it contains private data."),
     "paperspace": ("https://docs.digitalocean.com/products/paperspace/notebooks/how-to/create-notebooks/", "Create a Python notebook environment, open JupyterLab, and upload training.ipynb in its file browser.", "Choose an available machine in the Paperspace notebook settings. Check the displayed price; available free capacity is not guaranteed."),
     "lightning": ("https://lightning.ai/docs/platform/overview/getting-started/", "Open your own Studio in JupyterLab and upload training.ipynb using its file browser.", "Inspect the Studio machine and billing before selecting a GPU. Stop the Studio yourself when manual training is finished."),
-    "modal": ("https://modal.com/docs/guide/notebooks", "Open an authorized Modal notebook and upload training.ipynb through its notebook file interface.", "Choose an authorized CPU or GPU notebook configuration and inspect compute, storage and transfer charges in Modal."),
     "deepnote": ("https://deepnote.com/docs/importing-and-exporting-jupyter-notebooks", "Drag training.ipynb into the project's NOTEBOOKS section. A notebook uploaded under FILES must be moved to Notebooks before it can run.", "Select suitable project hardware in your workspace. The free CPU machine does not imply free GPU access."),
     "hex": ("https://learn.hex.tech/docs/explore-data/projects/import-export", "Choose Import on the Hex home page and upload training.ipynb as a project. An Admin or Editor role is required.", "Have a workspace administrator enable an authorized compute profile. Advanced GPU compute requires an eligible paid workspace; free trials do not unlock it."),
     "databricks": ("https://docs.databricks.com/aws/en/notebooks/notebook-export-import", "In Workspace, open the target folder's menu, choose Import, and select training.ipynb.", "Attach a Python runtime that permits this recipe and local file operations. Eligible verified Free Edition accounts may have limited AI Runtime; availability is account-specific."),
@@ -61,13 +60,25 @@ def provider_setup(provider_id, connection=None, hardware=None):
     provider = get_provider(provider_id)
     connection, hardware = connection or {}, hardware or {}
     steps = []
+    if provider_id in {"modal", "lightning"}:
+        instructions = ["Automatic free-only execution is blocked even after successful sign-in. This app cannot independently verify a zero out-of-pocket provider limit covering the planned run.",
+                        "A billing checkbox or saved cap is your report, not provider-verified evidence.",
+                        "You can prepare a manual notebook from training review instead. You choose and stop that runtime directly, and this app cannot enforce its billing limits."]
+        links = [_link("Provider billing and limits", provider["docs_url"])]
+        if provider_id == "modal":
+            instructions.insert(1, "Modal Workspace usage budgets cap usage before credits. Its separate Workspace spend limit caps net charges after credits. Environment budgets cover compute only; they do not cover every Workspace charge.")
+            instructions[-1] = MODAL_NOTEBOOK_RETIREMENT + " For free-only training, choose local compute or another provider with assisted notebook access."
+            links = [_link("Modal budgets and net spend limits", "https://modal.com/docs/guide/budgets"),
+                     _link("Hosted notebook retirement", "https://modal.com/changelog/sunsetting-modal-notebooks"),
+                     _link("Modal Functions", provider["docs_url"])]
+        steps.append(_step("limits", "Check automatic free-only eligibility first", "Signing in does not remove the free-only billing guard.", instructions=instructions, links=links))
     if provider_id == "local":
         steps.append(_step("tools", "Choose a local training environment", "The tabular starter already runs on CPU without another account.",
                            automatic=True, ready=True,
                            instructions=["Prepare the image or PyTorch environment only for recipes that need it.", "CUDA requires a compatible NVIDIA GPU and driver; setup does not prove a model will fit."],
-                           actions=[{"type": "environment", "label": "Prepare PyTorch CPU", "profile": "cpu"},
-                                    {"type": "environment", "label": "Prepare image training", "profile": "image"},
-                                    {"type": "environment", "label": "Prepare CUDA", "profile": "cuda"}]))
+                           actions=[{"type": "environment", "label": "Prepare PyTorch CPU", "profile": "cpu", "device": "cpu"},
+                                    {"type": "environment", "label": "Prepare image training", "profile": "image", "device": "auto"},
+                                    {"type": "environment", "label": "Prepare CUDA", "profile": "cuda", "device": "cuda"}]))
     else:
         url = provider["signup_url"]
         steps.append(_step("account", "Open your provider account", "Sign up or sign in directly with " + provider["name"] + ".",
@@ -105,7 +116,10 @@ def provider_setup(provider_id, connection=None, hardware=None):
     steps.append(_step("review", "Review the limits before training", provider["free_summary"],
                        instructions=provider["restrictions"], links=[_link("Provider documentation", provider["docs_url"])]))
     return {"provider_id": provider_id, "title": "Set up " + provider["name"],
-            "description": "Follow these steps here in the app. Account access and paid plans remain with your provider.", "steps": steps}
+            "description": "Follow these steps here in the app. Account access and paid plans remain with your provider.", "steps": steps,
+            "admission": {"automatic_free_only": provider["capabilities"]["automatic_free_only"],
+                          "verification": "provider_quota_required" if provider_id == "kaggle" else "local" if provider_id == "local" else "unverified",
+                          "manual_alternative": bool(provider["capabilities"].get("notebook_bundle"))}}
 
 
 def job_setup(job, root=None):
@@ -113,6 +127,19 @@ def job_setup(job, root=None):
     from .connectors import ConnectorError, needs_payload
     provider = get_provider(job["provider_id"])
     jid, spec = job["id"], dict(job["spec"])
+    if provider["id"] == "modal":
+        return {"provider_id": "modal", "job_id": jid, "title": "Recover existing Modal notebook results",
+                "description": MODAL_NOTEBOOK_RETIREMENT, "revision": "modal-notebooks-retired-2026-10-23",
+                "payload_required": False, "steps": [
+                    _step("retired", "Hosted notebooks are unavailable", MODAL_NOTEBOOK_RETIREMENT,
+                          automatic=True, instructions=["Existing downloaded checkpoints and model results can still be imported and recovered. No saved files have been removed."],
+                          links=[_link("Hosted notebook retirement", "https://modal.com/changelog/sunsetting-modal-notebooks"),
+                                 _link("Modal Functions", provider["docs_url"])], blocking_reason=MODAL_NOTEBOOK_RETIREMENT),
+                    _step("import", "Verify and import existing results", "Choose results previously downloaded from your provider session.",
+                          automatic=True, ready=bool(job.get("checkpoint") or job.get("export_status") == "verified"),
+                          instructions=["Import verifies the job identity and saved files before replacing local recovery data."],
+                          actions=[{"type": "import", "label": "Choose downloaded results"}],
+                          blocking_reason="No verified existing results have been imported yet.")]}
     folder = Path(root) if root is not None else None
     checkpoint = folder / "checkpoint.json" if folder else None
     digest, imported, problem = "initial", False, None
@@ -137,7 +164,7 @@ def job_setup(job, root=None):
         separate = needs_payload(spec, folder)
     except (ConnectorError, OSError) as exc:
         separate, problem = False, str(exc)
-    supported = provider["integration"] != "development" and provider["id"] != "local"
+    supported = provider["integration"] != "development" and provider["capabilities"].get("notebook_bundle", False)
     downloadable = supported and job.get("step", 0) < spec["steps"] and problem is None
     actions = [{"type": "notebook", "label": "Download training notebook", "path": f"/api/jobs/{jid}/notebook", "filename": "training.ipynb"}]
     if separate:
