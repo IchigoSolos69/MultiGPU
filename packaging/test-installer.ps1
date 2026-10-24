@@ -1,7 +1,7 @@
 param([string]$Installer, [string]$TestRoot)
 $ErrorActionPreference='Stop'
 $repository=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if (!$Installer) { $Installer=Join-Path $repository 'dist/MultiGPU-0.4.3-Setup.exe' }
+if (!$Installer) { $Installer=Join-Path $repository 'dist/MultiGPU-0.4.4-Setup.exe' }
 if (!$TestRoot) { $TestRoot=Join-Path $repository ('build/installer acceptance '+[guid]::NewGuid().ToString('N')) }
 $TestRoot=[IO.Path]::GetFullPath($TestRoot)
 if (!$TestRoot.StartsWith((Join-Path $repository 'build')+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Installer acceptance must use an isolated directory inside this project build folder.' }

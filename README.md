@@ -2,7 +2,7 @@
 
 MultiGPU is a local application for training models with **your own computer and your own provider accounts**, then saving verified models on your computer. It provides a Windows desktop window, in-app provider setup, a training wizard, progress monitoring, checkpoint recovery and model export.
 
-**Application version: 0.4.3. Official-source provider research checked: 24 October 2026.**
+**Application version: 0.4.4. Official-source provider research checked: 24 October 2026.**
 
 The goal is to make eligible free compute easier to use without changing the user's training target or silently enabling paid resources. The current implementation trains each attempt on **one resource at a time**. Ordered fallbacks and compatible checkpoints support continuation; synchronous cross-provider training and pooled GPU memory are future work.
 
@@ -48,6 +48,8 @@ The directory contains resources with different integration levels. It does not 
 
 The table is the **research classification**, not a live entitlement check. A provider can belong to several cost groups. Detailed conditions, official citations and conflicting evidence are in [docs/PROVIDER_RESEARCH.md](docs/PROVIDER_RESEARCH.md).
 
+The [additional compute directory](docs/ADDITIONAL_PROVIDERS.md) expands the research to GPU rental clouds, regional services, training APIs, free/trial offers and research allocations, with a [filterable CSV](docs/research/additional-provider-directory-2026-10-24.csv). Version 0.4.4 includes these **142 research entries** in the app's provider directory, with cost/access filters, source links and in-app research reports. They remain **research candidates, not supported training connectors**; related products, aggregators and allocation routes are identified separately.
+
 | Resource | Training cost category | Current app integration |
 |---|---|---|
 | Kaggle Notebooks | Published free CPU/GPU allowance; quota/capacity apply | Automatic CLI quota/submission/status/logs/output; immediate stop in provider console |
@@ -69,13 +71,13 @@ The table is the **research classification**, not a live entitlement check. A pr
 
 **Paperspace:** official pages still contain free-machine claims, but current new-account access was not established. Treat it as paid/free-unverified rather than promise a free M4000. The [evidence trail](docs/research/providers-gpu-2026-10-24.md#paperspace-evidence-and-unresolved-availability) records the conflict.
 
-**Research versus installed app:** this documentation update does not rebuild the 0.4.3 installer. Historical embedded provider text can lag this audit. Directory cost tags and eligibility need to be synchronized in a subsequent implementation; the research records those corrections. App support and actual account qualification remain separate.
+**Research versus training support:** the Windows build bundles the directory data, comparison CSV and all 13 detailed research documents for in-app reading without a network connection. Official external pages still need internet access. A researched offering does not become a selectable training resource until its connector is implemented and qualified; the existing local, automatic and assisted workflows retain their own readiness and allowance checks.
 
 ## Installation
 
 ### Windows release
 
-The packaged application targets **Windows 10/11 x64**. Install the release and open **MultiGPU** from the Start menu. A local build is `dist/MultiGPU-0.4.3-Setup.exe`; `dist/release-info.json` and `dist/acceptance-results-0.4.3.json` identify its hashes and checks when these artifacts are present.
+The packaged application targets **Windows 10/11 x64**. Install the release and open **MultiGPU** from the Start menu. A local build is `dist/MultiGPU-0.4.4-Setup.exe`; `dist/release-info.json` and release acceptance evidence identify its hashes and checks when these artifacts are present.
 
 The installer includes CPython, uv, the launcher and native host components. A system Python is not required. Optional training/provider libraries are prepared later, on request, in the app's environment.
 
@@ -215,7 +217,7 @@ Official base weights are downloaded during explicit preparation and checked aga
 
 Use the app's preparation buttons so packages reach the controller's actual interpreter. Profiles are `cpu`, `image`, `cuda`, `kaggle`, `modal` and `lightning`. Image preparation is device-aware and includes verified base weights. Setup tasks/logs persist, support cancellation and require repair/rechecking after interruption.
 
-Version 0.4.3 preparation pins Torch 2.14.1, torchvision 0.29.1 and Pillow 12.3.0; CUDA uses `cu130` builds from the official index. See [environment.py](multigpu/environment.py) for exact package/index choices. Optional project extras also exist in [pyproject.toml](pyproject.toml).
+Version 0.4.4 preparation pins Torch 2.14.1, torchvision 0.29.1 and Pillow 12.3.0; CUDA uses `cu130` builds from the official index. See [environment.py](multigpu/environment.py) for exact package/index choices. Optional project extras also exist in [pyproject.toml](pyproject.toml).
 
 Authentication stays in provider-native tools. Supported Windows sign-in buttons open their console/browser. The displayed commands target the app environment, not an unrelated terminal's Python. Connection forms store nonsecret settings, not pasted passwords/tokens.
 
@@ -455,7 +457,7 @@ See [packaging/README.md](packaging/README.md) for prerequisites and acceptance 
 
 ```powershell
 .\packaging\prepare-compiler.ps1
-.\packaging\build-windows.ps1 -Version 0.4.3
+.\packaging\build-windows.ps1 -Version 0.4.4
 .\packaging\test-payload.ps1
 .\packaging\test-native-helpers.ps1
 .\packaging\test-native.ps1
@@ -489,13 +491,13 @@ No project-level `LICENSE` file is currently included. Third-party notices remai
 
 ## Validation and next work
 
-[VALIDATION.md](VALIDATION.md) records exact releases, hashes and checks. Version 0.4.3 passed 230 Python tests, three affected browser suites and bundled-payload CPU training/export/restart. Retained 0.4.2 evidence includes native Windows host/helper tests and real RTX 5050 Laptop CUDA tabular/image training, exact resume, export and standalone prediction.
+[VALIDATION.md](VALIDATION.md) records exact releases, hashes and checks. Version 0.4.4 passed 238 Python tests and browser checks for research browsing, cost filters, safe report rendering, mobile layouts, existing setup and local training/export. Windows payload checks cover the bundled research, CPU training/export and restart. Retained 0.4.2 evidence includes real RTX 5050 Laptop CUDA tabular/image training, exact resume, export and standalone prediction.
 
-Local and fixture tests do not certify live provider lifecycle/billing, real Colab/Drive persistence after VM deletion, every GPU/driver or clean Windows first-install behavior. Research establishes published offers, not those execution paths. The research/README update itself does not create a new installer or claim fresh training tests.
+Local and fixture tests do not certify live provider lifecycle/billing, real Colab/Drive persistence after VM deletion, every GPU/driver or clean Windows first-install behavior. The 0.4.4 Windows build includes the expanded directory and offline research; the additional entries remain outside executable training resources until their connectors are implemented and qualified.
 
 Next work, tracked in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md):
 
-1. Synchronize cost tags/filters/eligibility with the official-source audit, retaining documented uncertainty.
+1. Keep provider research current and qualify additional connectors, retaining documented uncertainty.
 2. Qualify authorized live provider launch, observations, quota exhaustion, interruption, cancellation and usable local export.
 3. Independently verify billing protection before enabling more automatic free-only modes.
 4. Qualify real notebook recovery, package/network limits and allocated hardware.

@@ -40,6 +40,7 @@ function Start-TestController {
     if (!$script:connection) { throw 'The bundled controller did not publish its address.' }
     $bootstrap=Invoke-WebRequest -Uri ($script:connection.url+'/api/bootstrap') -UseBasicParsing -TimeoutSec 5
     $script:headers=@{'X-MultiGPU-Token'=$bootstrap.Headers['X-MultiGPU-Token']}
+    $script:bootstrapData=$bootstrap.Content | ConvertFrom-Json
 }
 function Stop-TestController {
     if ($script:connection) {
@@ -51,6 +52,21 @@ function Stop-TestController {
 }
 try {
     Start-TestController
+    if ($bootstrapData.app.version -ne $manifest.version) { throw 'Payload and controller application versions differ.' }
+    if (@($bootstrapData.providers).Count -ne 14 -or @($bootstrapData.research_providers).Count -ne 142) { throw 'Bundled provider and research directories have unexpected counts.' }
+    if (@($bootstrapData.research_providers | Where-Object { !$_.research_only -or $_.capabilities.submit -or $_.capabilities.notebook_bundle -or $_.capabilities.automatic_free_only }).Count) { throw 'Research-only entries acquired execution capabilities.' }
+    $googleResearch=$bootstrapData.research_providers | Where-Object { $_.id -eq 'google_cloud' }
+    $coiledResearch=$bootstrapData.research_providers | Where-Object { $_.id -eq 'coiled' }
+    if (!$googleResearch -or $googleResearch.cost_tags -contains 'free_gpu' -or !$coiledResearch -or $coiledResearch.cost_tags -notcontains 'platform_credit') { throw 'Research cost distinctions were lost in the payload.' }
+    if (@($bootstrapData.research_documents).Count -ne 13) { throw 'Bundled research document index is incomplete.' }
+    $researchDocuments=@()
+    foreach ($document in $bootstrapData.research_documents) {
+        $observed=Invoke-RestMethod -Uri ($connection.url+'/api/research/documents/'+$document.id) -TimeoutSec 5
+        if ($observed.id -ne $document.id -or !$observed.content -or $observed.content.Length -lt 50) { throw ('Bundled research document is unreadable: '+$document.id) }
+        $researchDocuments+=$observed.id
+    }
+    $researchCsv=Invoke-WebRequest -Uri ($connection.url+'/api/research/directory.csv') -UseBasicParsing -TimeoutSec 5
+    if (@($researchCsv.Content | ConvertFrom-Csv).Count -ne 142) { throw 'Bundled research comparison CSV is incomplete.' }
     $spec=@{name='Bundled runtime smoke test';recipe='starter';recipe_version=2;providers=@('local');device='cpu';steps=12;batch_size=4;output_dir=(Join-Path $TestRoot 'exports');free_only=$true}
     $plan=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/preview') -Method Post -Headers $headers -ContentType 'application/json' -Body ($spec | ConvertTo-Json) -TimeoutSec 10
     if (!$plan.eligible) { throw ('Bundled local preview failed: '+($plan | ConvertTo-Json -Depth 6)) }
@@ -69,7 +85,7 @@ try {
     $restored=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/'+$job.id) -TimeoutSec 5
     if ($restored.status -ne 'completed' -or $restored.export_path -ne $job.export_path) { throw 'The bundled controller did not restore its completed run after restart.' }
     Stop-TestController
-    $result=@{passed=$true;python=$identity;app=$app;workspace=$workspace;job_id=$job.id;export_path=$job.export_path;restart_restored=$true;provider_jobs_launched=$false}
+    $result=@{passed=$true;python=$identity;app=$app;workspace=$workspace;job_id=$job.id;export_path=$job.export_path;restart_restored=$true;provider_jobs_launched=$false;research_entries=142;research_documents=$researchDocuments;research_csv_entries=142;research_local_api_read=$true;research_execution_disabled=$true}
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $TestRoot 'acceptance-result.json') -Encoding UTF8
     Write-Output ($result | ConvertTo-Json -Depth 5)
 } finally {

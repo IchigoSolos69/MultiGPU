@@ -56,6 +56,8 @@ The user's account experience and current public pages do not establish a usable
 
 ## Source detail and unresolved questions
 
+For providers beyond the original directory, see the [additional training compute research](ADDITIONAL_PROVIDERS.md) and its [CSV comparison](research/additional-provider-directory-2026-10-24.csv). It separates actual training resources from inference APIs, platform-only credits, closed programs and overlapping suppliers. The new entries are research candidates, not shipping integrations.
+
 - [Paperspace, Kaggle, consumer Colab](research/providers-gpu-2026-10-24.md): free-machine conflict, hardware retirement, quotas, restrictions, API availability and account checks.
 - [Modal, Lightning and local hardware](research/providers-credits-2026-10-24.md): credit renewal/expiry, card conditions, billing controls and connector implications.
 - [Deepnote, Hex, Datalore and Fastero](research/providers-notebooks-2026-10-24.md): CPU/GPU separation, trial exclusions, API plans, conflicting CPU counts and AI-versus-compute balances.
@@ -63,6 +65,6 @@ The user's account experience and current public pages do not establish a usable
 
 ## Research versus shipping application
 
-This is a research/documentation update. The 0.4.3 installer was built before this audit; its binary and embedded provider copy have not been rebuilt by writing these documents. In particular, historical catalog wording advertising a free Paperspace M4000 should not be treated as current verified availability. A subsequent product change should synchronize the directory tags, filters, eligibility rules and official source links against this classification, with tests for unknown and conflicting entitlements.
+Version 0.4.4 bundles this audit, the expanded research directory and its detailed reports for reading inside the app. The provider screen separates published cost/access categories from actual integration and account status. Paperspace's obsolete free-machine promise has been replaced with paid/free-unverified wording. The additional researched entries do not become executable connectors or establish an account's actual allowance.
 
 Current implemented connector and validation boundaries are described in the [project README](../README.md) and [validation report](../VALIDATION.md). This research grants no permission to bypass limits, keep sessions artificially alive or activate paid fallback.

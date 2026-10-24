@@ -1,0 +1,188 @@
+{
+  "researched_at": "2026-10-24",
+  "source_policy": "Official provider resources only; no live accounts or paid jobs.",
+  "qualified_count": 9,
+  "rows": [
+    {
+      "id": "volcengine-mlp",
+      "name": "Volcengine Machine Learning Platform",
+      "parent_vendor": "ByteDance / Volcengine",
+      "category": "major-cloud",
+      "training_mode": "Custom notebook, single-node and distributed model training",
+      "accelerator": "GPU/CPU cloud resources; RDMA-capable GPU options",
+      "free_offer": "No general free training allowance verified",
+      "offer_notes": "Enterprise account setup and GPU resource purchase are documented. Free signup or proof-of-concept access does not establish a compute grant.",
+      "interface": "Console and CLI training jobs, TensorBoard, container images and object storage",
+      "limits": "Enterprise verification, account quotas, exact accelerator, regional access, billing controls and portable export require qualification.",
+      "sources": [
+        "https://docs.volcengine.com/docs/ml-platform/quick-access-guide-enterprise-edition?lang=en",
+        "https://www.volcengine.com/product/ml-platform"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "sensecore",
+      "name": "SenseCore",
+      "parent_vendor": "SenseTime",
+      "category": "gpu-cloud",
+      "training_mode": "Custom container training jobs across GPU worker pods",
+      "accelerator": "GPU training pools; account-dependent configurations",
+      "free_offer": "No general free training allocation verified",
+      "offer_notes": "Research-qualified through official job CLI, not merely corporate model-training claims. Commercial access and exact pricing require account qualification.",
+      "interface": "SCO CLI creates, describes, logs, stops and deletes training jobs",
+      "limits": "Workspace/queue permission, purchased allocation, exact GPU compatibility, checkpoint storage and output downloads must be tested.",
+      "sources": [
+        "https://www.sensecore.cn/help/docs/CLI/SCO_Refrence/SSP/jobs/create",
+        "https://www.sensecore.cn/about"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "ucloud",
+      "name": "UCloud GPU Cloud / UAI Train",
+      "parent_vendor": "UCloud",
+      "category": "major-cloud",
+      "training_mode": "Custom GPU VM/container training, single-node and distributed jobs",
+      "accelerator": "NVIDIA GPU VMs and bare metal; configuration dependent",
+      "free_offer": "No quantified generally available free GPU allowance verified",
+      "offer_notes": "Official GPU product advertises tailored trials without published entitlement. Treat as paid or sales-approved trial, not automatic free compute.",
+      "interface": "GPU VM SSH/images; UAI Train container jobs and native cloud interfaces",
+      "limits": "Resource and bandwidth/storage costs, trial scope, account verification, quotas, interruption behavior and portable export require testing.",
+      "sources": [
+        "https://www.ucloud.cn/site/product/gpu.html",
+        "https://www-waf.ucloud.cn/site/solution/ai.html",
+        "https://docs.ucloud.cn/gpu/mdToPdf/gpu.pdf"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "kingsoft-cloud",
+      "name": "Kingsoft Cloud Xingliu Platform",
+      "parent_vendor": "Kingsoft Cloud",
+      "category": "major-cloud",
+      "training_mode": "Custom PyTorch/TensorFlow container jobs and distributed model training",
+      "accelerator": "GPU resource groups and optional heterogeneous CPU/NPU pools",
+      "free_offer": "No general free training allowance verified",
+      "offer_notes": "Current June/September 2026 guides explicitly purchase GPU resources, create queues and launch Llama/PyTorch training; this is paid execution.",
+      "interface": "Training console, containers, TensorBoard, KS3 storage and native lifecycle interfaces",
+      "limits": "Resource groups/queues, VPC, storage credentials, exact accelerator, costs, usable model export and automation contract require qualification.",
+      "sources": [
+        "https://docs.ksyun.com/documents/45250",
+        "https://docs.ksyun.com/documents/44148",
+        "https://docs.ksyun.com/documents/44153"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "bohrium",
+      "name": "Bohrium Scientific Computing",
+      "parent_vendor": "DP Technology",
+      "category": "gpu-cloud",
+      "training_mode": "Containerized scientific model training and custom compute commands",
+      "accelerator": "NVIDIA T4, V100 or A100 in documented training examples",
+      "free_offer": "No current general free training credit verified",
+      "offer_notes": "Scientific research tutorials are free resources; compute requires top-up/project configuration. Do not confuse Bohrium AI-assistant credits with GPU training credits.",
+      "interface": "bohr CLI submits, monitors, terminates and downloads job results",
+      "limits": "Account/project budget, actual machine catalog, training framework compatibility, data transfer and regional availability require qualification.",
+      "sources": [
+        "https://bohrium-doc.dp.tech/en/docs/quickstart/FirstRun/",
+        "https://www.dp.tech/product/bohrium/workspace"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "featurize",
+      "name": "Featurize",
+      "parent_vendor": "Featurize",
+      "category": "notebook",
+      "training_mode": "Custom deep-learning experiments and notebook training",
+      "accelerator": "NVIDIA RTX 3090, RTX 4090 and RTX PRO 6000 offerings",
+      "free_offer": "Purchase-conditioned promotion: first top-up of at least ¥5 receives a one-hour experience voucher",
+      "offer_notes": "Paid usage or monthly rental. Free disk allowances and unspecified activity rewards are not general free GPU compute.",
+      "interface": "Hosted laboratory/notebooks and documented instance rental; automated lifecycle not qualified",
+      "limits": "Voucher GPU eligibility/expiry, storage cleanup, current price, actual quota, cancellation and local model retrieval require testing.",
+      "sources": [
+        "https://featurize.cn/",
+        "https://docs.featurize.cn/",
+        "https://featurize.cn/notebook/list"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "autodl",
+      "name": "AutoDL",
+      "parent_vendor": "AutoDL / SeetaCloud",
+      "category": "gpu-cloud",
+      "training_mode": "Custom Python training through GPU containers, JupyterLab and SSH",
+      "accelerator": "Multiple NVIDIA GPU models; selected non-CUDA accelerators need separate framework qualification",
+      "free_offer": "No universal free compute verified; application-selected 2026 academic funding program exists",
+      "offer_notes": "Academic program targets scholars at Chinese universities/research institutes. Grants are research funding, not a universal signup balance.",
+      "interface": "JupyterLab, SSH, instance API and documented data upload/download",
+      "limits": "Compute billed while running. Storage can incur separate charges; stopped instance retention and long inactivity cleanup require external checkpoint backups.",
+      "sources": [
+        "https://www.autodl.com/docs/quick_start/",
+        "https://www.autodl.com/docs/fs/",
+        "https://www.autodl.com/docs/academic-corporation-talents/"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "gitee-ai",
+      "name": "Gitee AI / MoArk",
+      "parent_vendor": "Gitee AI / MoArk",
+      "category": "managed-training",
+      "training_mode": "Managed text/image model fine-tuning and LoRA",
+      "accelerator": "Domestic GPU training; Iluvatar and MetaX listed",
+      "free_offer": "No verified general free training allowance",
+      "offer_notes": "Actual training is documented separately from model API inference. Fine-tuning bills by elapsed time; API credits must not be assumed applicable.",
+      "interface": "Managed training UI, progress/loss tracking and model repository",
+      "limits": "Supported base models, training API automation, portable weights, checkpoint resume and accelerator-specific compatibility require qualification.",
+      "sources": [
+        "https://ai.gitee.com/docs/",
+        "https://ai.gitee.com/training",
+        "https://www.moark.com/docs/products/training/price"
+      ],
+      "status": "researched-not-implemented"
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "parent_vendor": "SiliconFlow",
+      "category": "managed-training",
+      "training_mode": "Advertised managed model fine-tuning using uploaded datasets",
+      "accelerator": "Managed GPU resources; training hardware unspecified",
+      "free_offer": "No verified free training credit",
+      "offer_notes": "Official product page describes dataset upload, training launch, metrics and deployment. Public execution/export contract remains less detailed than established job platforms.",
+      "interface": "Advertised UI/API fine-tuning workflow; account-level capability verification required",
+      "limits": "Supported models, actual training availability, pricing, weight download, checkpoint recovery and arbitrary-script support unverified.",
+      "sources": [
+        "https://www.siliconflow.com/products",
+        "https://www.siliconflow.com/zh/products"
+      ],
+      "status": "researched-not-implemented"
+    }
+  ],
+  "watchlist": [
+    {
+      "name": "JD Cloud",
+      "reason": "Official legacy private-cloud GPU whitepaper found; current public training execution and commercial access documentation not sufficiently verified.",
+      "sources": [
+        "https://img1.jcloudcs.com/portal/whitepaper/%E4%BA%AC%E4%B8%9C%E6%99%BA%E8%81%94%E4%BA%91%E4%B8%93%E6%9C%89%E4%BA%91JD%20Cloud%20Stack%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf"
+      ]
+    },
+    {
+      "name": "AutoAI",
+      "reason": "autoai.com resolves to WeCloud/NavInfo identity; no verified general GPU training cloud established. Avoid conflating with AutoDL or IBM AutoAI.",
+      "sources": [
+        "https://www.autoai.com/"
+      ]
+    },
+    {
+      "name": "Baidu AI Cloud",
+      "reason": "Paid EasyDL training exists, including exports; same Baidu parent already covered by AI Studio. Retain product distinction without another vendor count.",
+      "sources": [
+        "https://cloud.baidu.com/doc/EASYDL/s/4l2swlue1"
+      ]
+    }
+  ]
+}

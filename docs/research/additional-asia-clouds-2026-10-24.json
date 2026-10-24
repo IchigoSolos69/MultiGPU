@@ -145,5 +145,128 @@
       "https://docs.twcloud.ai/docs/pricing/"
     ],
     "status": "researched-not-implemented"
+  },
+  {
+    "id": "kt-cloud-ai-train",
+    "name": "kt cloud: AI Train and GPUaaS",
+    "parent_vendor": "kt cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU-node clusters and dynamically allocated AI training infrastructure",
+    "accelerator": "NVIDIA GPUs, including H100 training configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Operational usage-based training GPUaaS; no recurring free GPU entitlement established.",
+    "interface": "Managed GPU-node clustering and dynamic allocation; account-level integration requires qualification",
+    "limits": "Contract, capacity and account eligibility require confirmation; inference-focused AI SERV is distinct from AI Train.",
+    "sources": [
+      "https://tech.ktcloud.com/228",
+      "https://www.ktcloud.com/media/press/20250224091719092?lan=eng&source="
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "gmo-gpu-cloud",
+    "name": "GMO Internet: GMO GPU Cloud",
+    "parent_vendor": "GMO Internet",
+    "category": "major-cloud",
+    "training_mode": "Managed HPC clusters and bare-metal model training",
+    "accelerator": "Current H200/B300 product configurations; account stock requires confirmation",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU training infrastructure; no recurring free GPU entitlement established.",
+    "interface": "Slurm managed HPC environment and bare-metal servers",
+    "limits": "ConoHa H100 new provisioning closed March 2026; same parent vendor; exclude announced future facilities from available capacity.",
+    "sources": [
+      "https://gpucloud.gmo/",
+      "https://www.gmo.jp/en/news/article/838/",
+      "https://doc.conoha.jp/products/vps-v3/server-v3/gpu-v3/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "highreso-gpusoroban",
+    "name": "HIGHRESO: GPUSOROBAN",
+    "parent_vendor": "HIGHRESO",
+    "category": "major-cloud",
+    "training_mode": "GPU instances and compute clusters for model training",
+    "accelerator": "NVIDIA A100/H200 and service-specific configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid compute; free registration and expert support do not establish free GPU resources.",
+    "interface": "Documented SSH, Slurm batch submission, results and usage accounting",
+    "limits": "Selected service configuration, storage charging, account capacity and lifecycle billing require qualification.",
+    "sources": [
+      "https://soroban.highreso.jp/",
+      "https://soroban.highreso.jp/aicluster-guide",
+      "https://highreso.jp/en/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "siam-ai-cloud",
+    "name": "SIAM.AI Cloud",
+    "parent_vendor": "SIAM AI Corporation",
+    "category": "major-cloud",
+    "training_mode": "Model training, fine-tuning and distributed GPU clusters",
+    "accelerator": "NVIDIA A100, H100 and H200 configurations documented",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid training cloud; no public recurring free GPU entitlement established.",
+    "interface": "Kubernetes, Slurm and container workloads documented",
+    "limits": "Sales/account qualification, requested hardware capacity and exact price require verification; inference APIs are a separate execution mode.",
+    "sources": [
+      "https://siam.ai/machine-learning-and-ai/",
+      "https://siam.ai/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "catalyst-cloud-gpu",
+    "name": "Catalyst Cloud: C2 and C3 GPU",
+    "parent_vendor": "Catalyst Cloud",
+    "category": "major-cloud",
+    "training_mode": "GPU virtual machines for AI and machine-learning workloads",
+    "accelerator": "NVIDIA A100 80 GB and L40S configurations",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly GPU products; no recurring free GPU entitlement established.",
+    "interface": "Cloud VM lifecycle; official catalog links API references and documentation",
+    "limits": "Beta GPU services limited to nz-por-1; separate grant approval does not automatically establish GPU coverage.",
+    "sources": [
+      "https://catalystcloud.nz/services/iaas/compute/compute-c2-gpu/",
+      "https://catalystcloud.nz/services/iaas/compute/compute-c3-gpu/",
+      "https://catalystcloud.nz/services/iaas/compute/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "vessl-cloud",
+    "name": "VESSL AI: VESSL Cloud",
+    "parent_vendor": "VESSL AI",
+    "category": "major-cloud",
+    "training_mode": "Rented GPU workspaces, model training and multi-node clusters",
+    "accelerator": "Self-service NVIDIA A100/H100/L40S; newer GPU configurations require sales or reservation",
+    "free_offer": "none-verified",
+    "offer_notes": "Current product supplies compute, not only BYOC orchestration; launching workspaces requires a payment card and purchased credit.",
+    "interface": "JupyterLab workspaces, Docker environments and multi-node training; H100 VM cluster has beta root SSH access",
+    "limits": "Storage charges persist separately; current price list supersedes older blog rates; on-request hardware is not guaranteed inventory.",
+    "sources": [
+      "https://vessl.ai/en/pricing",
+      "https://vessl.ai/en/blog/vessl-cloud-gpuaas-start-guide-en",
+      "https://vessl.ai/en/gpu/h100"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cybera-rapid-access-cloud",
+    "name": "Cybera Rapid Access Cloud",
+    "parent_vendor": "Cybera institutional cloud program",
+    "category": "allocation-program",
+    "training_mode": "Approved CPU experimentation, small-model training and data preparation",
+    "accelerator": "CPU/RAM allocations documented; GPU entitlement not established",
+    "free_offer": "institutional-cpu-allocation",
+    "offer_notes": "Free cloud resources for Alberta-based academics, researchers, students and classrooms within Cybera member institutions.",
+    "interface": "Approved cloud project and institutional portal; external automation requires permission and qualification",
+    "limits": "Member-institution affiliation, project purpose, quotas and allocation duration; not public free GPU access.",
+    "sources": [
+      "https://www.cybera.ca/rapid-access-cloud/",
+      "https://www.cybera.ca/cloud/"
+    ],
+    "status": "researched-not-implemented"
   }
 ]

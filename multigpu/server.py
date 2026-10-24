@@ -59,6 +59,13 @@ def make_server(service, port=8765):
                 parts = url.path.strip("/").split("/")
                 if url.path == "/api/bootstrap":
                     return self.send(200, service.bootstrap(), extra={"X-MultiGPU-Token": token})
+                if len(parts) == 4 and parts[:3] == ["api", "research", "documents"]:
+                    from .research import research_document
+                    return self.send(200, research_document(parts[3]))
+                if url.path == "/api/research/directory.csv":
+                    from .research import research_directory_csv
+                    return self.send(200, research_directory_csv(), "text/csv; charset=utf-8",
+                                     {"Content-Disposition": 'attachment; filename="multigpu-provider-research-2026-10-24.csv"'})
                 if url.path == "/api/environment/tasks":
                     return self.send(200, {"tasks": environment.recent()})
                 if url.path == "/api/hardware":

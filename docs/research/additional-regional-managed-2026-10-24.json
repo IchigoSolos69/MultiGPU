@@ -23,10 +23,10 @@
     "category": "regional-cloud",
     "training_mode": "GPU VMs, clusters and managed fine-tuning",
     "accelerator": "NVIDIA",
-    "free_offer": "introductory-credit",
-    "offer_notes": "Limited-period Studio offer advertises INR 10,000 credits",
+    "free_offer": "Conditional introductory GPU/fine-tuning credit",
+    "offer_notes": "INR 10,000 / 30 days; FAQ says no automatic charge after exhaustion",
     "interface": "Console/API; execution qualification pending",
-    "limits": "Actual award, expiry and covered resources untested; no guaranteed runtime estimate",
+    "limits": "Business email, claim form, business KYC and confirmation call; account activation wording conflicts; actual billing controls untested",
     "sources": [
       "https://shakticloud.ai/pricing/",
       "https://shakticloud.ai/shakti-studio-free-ai-cloud-credits/"
@@ -318,6 +318,211 @@
     "limits": "1 GB guaranteed / 2 GB maximum; idle shutdown; six-hour or one-CPU-hour target",
     "sources": [
       "https://mybinder.readthedocs.io/en/latest/about/user-guidelines.html"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "baseten",
+    "name": "Baseten Training",
+    "parent_vendor": "Baseten",
+    "category": "gpu-cloud",
+    "training_mode": "Custom training jobs and training-loop API",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid training infrastructure; distinct from inference APIs",
+    "interface": "Training jobs, remote access, Slurm and checkpoint APIs",
+    "limits": "Account access, storage and usable local model export need verification",
+    "sources": [
+      "https://docs.baseten.co/training/overview",
+      "https://www.baseten.co/pricing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "tinker",
+    "name": "Thinking Machines Lab / Tinker",
+    "parent_vendor": "Thinking Machines Lab",
+    "category": "managed-training",
+    "training_mode": "Code-driven LoRA training on supported open-weight models",
+    "accelerator": "Provider-managed GPUs",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid by tokens plus checkpoint storage; weights downloadable",
+    "interface": "Training SDK and checkpoint APIs",
+    "limits": "LoRA rather than full-parameter training; supported-model and payment conditions apply",
+    "sources": [
+      "https://thinkingmachines.ai/tinker/",
+      "https://tinker-docs.thinkingmachines.ai/",
+      "https://tinker-docs.thinkingmachines.ai/tinker/models/models_and_pricing/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "anyscale",
+    "name": "Anyscale",
+    "parent_vendor": "Anyscale",
+    "category": "access-platform",
+    "training_mode": "Ray jobs and distributed model training",
+    "accelerator": "NVIDIA / cloud-dependent",
+    "free_offer": "introductory-credit",
+    "offer_notes": "Paid hosted or BYOC compute; advertised USD 100 starting credit",
+    "interface": "Ray jobs and managed cluster APIs",
+    "limits": "GPU eligibility, grant expiry and covered costs untested; overlaps underlying clouds",
+    "sources": [
+      "https://docs.anyscale.com/get-started/what-is-anyscale",
+      "https://www.anyscale.com/pricing"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "coiled",
+    "name": "Coiled",
+    "parent_vendor": "Coiled",
+    "category": "access-platform",
+    "training_mode": "GPU batch scripts and Dask training",
+    "accelerator": "NVIDIA",
+    "free_offer": "platform-only-credit",
+    "offer_notes": "USD 25 monthly platform allowance; hardware separately billed by user's cloud",
+    "interface": "Batch CLI/Python SDK; user's cloud account",
+    "limits": "Not free GPU rental; BYOC compute, storage and network bills remain payable",
+    "sources": [
+      "https://coiled.io/pricing",
+      "https://docs.coiled.io/examples/gpu-job.html",
+      "https://docs.coiled.io/user_guide/costs/index.html"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "rescale",
+    "name": "Rescale",
+    "parent_vendor": "Rescale",
+    "category": "access-platform",
+    "training_mode": "GPU cloud jobs and AI Physics training",
+    "accelerator": "Cloud-dependent GPUs",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid enterprise compute and platform services",
+    "interface": "Job API and scientific training platform",
+    "limits": "Compute, platform, IP, storage, transfer and software charges; export may require enabled access",
+    "sources": [
+      "https://dev.rescale.com/documentation/ai-physics/",
+      "https://rescale.com/documentation/main/administration-portals/financials/billing/",
+      "https://engineering.rescale.com/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "galaxy",
+    "name": "UseGalaxy.eu",
+    "parent_vendor": "European Galaxy / Freiburg",
+    "category": "notebook",
+    "training_mode": "Scientific GPU notebooks and protein-model fine-tuning",
+    "accelerator": "GPU tool-dependent",
+    "free_offer": "conditional-scientific-compute",
+    "offer_notes": "Free public scientific service with GPU-enabled Jupyter training tools",
+    "interface": "Interactive Galaxy tools and notebooks",
+    "limits": "Research/tool scope, queue, actual hardware, quotas and unattended-use permission require qualification",
+    "sources": [
+      "https://galaxyproject.org/use/usegalaxy-eu/",
+      "https://training.galaxyproject.org/training-material/by-tool/interactive_tool_ml_jupyter_notebook.html"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "chameleon",
+    "name": "Chameleon",
+    "parent_vendor": "Chameleon research testbed",
+    "category": "allocation-program",
+    "training_mode": "Approved academic GPU research VMs and bare metal",
+    "accelerator": "NVIDIA / host-dependent",
+    "free_offer": "research-allocation",
+    "offer_notes": "Allocation-funded open academic computer-science research",
+    "interface": "OpenStack leases, Jupyter and research APIs",
+    "limits": "US community/international collaboration criteria; commercial goals excluded; GPU leases maximum seven days",
+    "sources": [
+      "https://www.chameleoncloud.org/learn/frequently-asked-questions/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cherry",
+    "name": "Cherry Servers",
+    "parent_vendor": "Cherry Servers",
+    "category": "enterprise-gpu",
+    "training_mode": "Custom training on rented GPU-equipped bare metal",
+    "accelerator": "GPU configuration-dependent",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid dedicated servers with optional GPUs",
+    "interface": "Dedicated-server provisioning and remote access",
+    "limits": "Actual GPU stock/drivers unverified; custom builds may take 24–72 hours",
+    "sources": [
+      "https://www.cherryservers.com/knowledge/docs/compute/dedicated-servers"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "phoenixnap",
+    "name": "phoenixNAP Bare Metal Cloud",
+    "parent_vendor": "phoenixNAP",
+    "category": "gpu-cloud",
+    "training_mode": "Dedicated GPU servers for AI training",
+    "accelerator": "Intel Max 1100",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly, monthly and longer contracts",
+    "interface": "Bare Metal Cloud API and remote server access",
+    "limits": "Intel runtime qualification required; not automatically CUDA-compatible",
+    "sources": [
+      "https://phoenixnap.com/bare-metal-cloud/gpu-servers",
+      "https://phoenixnap.com/bare-metal-cloud/instances"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "atlantic",
+    "name": "Atlantic.Net GPU Cloud",
+    "parent_vendor": "Atlantic.Net",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM and dedicated-server model training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU cloud with hourly/monthly and reserved options",
+    "interface": "Root-access GPU VMs and server provisioning",
+    "limits": "Include transfer overage, backups, IPs and actual allocation in cost preview",
+    "sources": [
+      "https://www.atlantic.net/gpu-server-hosting/gpu-cloud-hosting/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "leaseweb",
+    "name": "Leaseweb GPU Servers",
+    "parent_vendor": "Leaseweb",
+    "category": "enterprise-gpu",
+    "training_mode": "Dedicated single-node and multi-GPU model training",
+    "accelerator": "NVIDIA / selected AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid contracted GPU infrastructure",
+    "interface": "Dedicated-server ordering and remote execution",
+    "limits": "Check minimum term, stock, framework setup and allocated interconnect",
+    "sources": [
+      "https://www.leaseweb.com/en/products-services/dedicated-servers/gpu-server",
+      "https://blog.leaseweb.com/2026/09/09/epyc-gpu-dedicated-servers/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "gpu_mart",
+    "name": "GPU Mart / Database Mart",
+    "parent_vendor": "Database Mart",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VPS and dedicated GPU model training",
+    "accelerator": "NVIDIA",
+    "free_offer": "conditional-sponsorship",
+    "offer_notes": "Paid; selected startups may receive up to three months of sponsored eligible GPU servers",
+    "interface": "GPU server provisioning and remote access",
+    "limits": "Application and inventory limits; monthly terms; hosting domain gpu-mart.com, not hardware-sale marketplace gpumart.com",
+    "sources": [
+      "https://www.gpu-mart.com/nvidia-a100-rental",
+      "https://www.gpu-mart.com/about-us",
+      "https://www.databasemart.com/ai-startup-program"
     ],
     "status": "researched-not-implemented"
   }

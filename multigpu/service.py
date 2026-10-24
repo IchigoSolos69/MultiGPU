@@ -197,6 +197,7 @@ class Service:
         return guide
 
     def bootstrap(self):
+        from .research import research_documents, research_providers
         connections = self.connections()
         providers = []
         for p in CATALOG:
@@ -209,7 +210,8 @@ class Service:
             providers.append({**p, "connection": connection})
         from . import __version__
         environment = getattr(self, "environment", None)
-        return {"providers": providers, "jobs": self.jobs(), "hardware": self.hardware, "settings": self.settings(),
+        return {"providers": providers, "research_providers": research_providers(), "research_documents": research_documents(),
+                "jobs": self.jobs(), "hardware": self.hardware, "settings": self.settings(),
                 "environment_tasks": environment.recent() if environment else [],
                 "app": {"name": "MultiGPU", "version": __version__, "workspace_dir":str(self.root), "runtime_base_prefix": sys.base_prefix}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
 

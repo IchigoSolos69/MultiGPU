@@ -1,0 +1,257 @@
+[
+  {
+    "id": "yandex_cloud",
+    "name": "Yandex Cloud",
+    "parent_vendor": "Yandex Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM training and InfiniBand clusters",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid compute; free image licensing is not free GPU allocation",
+    "interface": "CLI, REST/gRPC, Terraform, GPU images and SSH",
+    "limits": "GPU quota starts at zero; supported hardware and clusters differ by region",
+    "sources": [
+      "https://yandex.cloud/en/docs/compute/concepts/gpus",
+      "https://yandex.cloud/en/docs/compute/operations/vm-create/create-vm-with-gpu",
+      "https://yandex.cloud/ru-kz/docs/compute/operations/vm-create/create-vm-with-gpu"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "selectel",
+    "name": "Selectel GPU Line",
+    "parent_vendor": "Selectel",
+    "category": "gpu-cloud",
+    "training_mode": "GPU cloud VM training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU Line; no recurring free allowance verified",
+    "interface": "Cloud servers with dedicated PCI GPU devices",
+    "limits": "Live stock, NVLink requests, boot-volume compatibility and account rates need verification",
+    "sources": [
+      "https://selectel.ru/services/cloud/servers/?section=prices",
+      "https://docs.selectel.ru/en/cloud-servers/create/gpus/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cloud_ru",
+    "name": "Cloud.ru",
+    "parent_vendor": "Cloud.ru",
+    "category": "gpu-cloud",
+    "training_mode": "Notebook, GPU environment and distributed-job training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid usage-based GPU and storage; count product variants under one provider",
+    "interface": "Evolution Notebooks; Jupyter, client library and public training API",
+    "limits": "Multiple products have distinct entitlements; GPU coverage of general bonuses unverified",
+    "sources": [
+      "https://cloud.ru/solutions/ml-modeli",
+      "https://cloud.ru/docs/aicloud/mlspace/concepts/guides/guides__mt/environments__model-training__training-process",
+      "https://cloud.ru/products/evolution-notebooks"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "mws",
+    "name": "MTS Web Services GPU infrastructure",
+    "parent_vendor": "MTS",
+    "category": "enterprise-gpu",
+    "training_mode": "GPU VM and multi-GPU model training",
+    "accelerator": "NVIDIA",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Official GPU page advertises conditional 14-day testing without payment",
+    "interface": "MWS console, API, Terraform and VM environments",
+    "limits": "Trial approval, GPU allocation, capacity and exit terms require sales confirmation",
+    "sources": [
+      "https://business.mts.ru/moskva/virtualnaia-infrastruktura-s-gpu"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "timeweb",
+    "name": "Timeweb Cloud GPU servers",
+    "parent_vendor": "Timeweb Cloud",
+    "category": "gpu-cloud",
+    "training_mode": "Cloud or dedicated GPU training servers",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly deductions from month-presented configurations",
+    "interface": "Cloud control panel and custom software on rented servers",
+    "limits": "Higher-end SKUs marked preorder; advance payment; generic grants lack verified GPU coverage",
+    "sources": [
+      "https://timeweb.cloud/services/gpu",
+      "https://timeweb.cloud/services/ai-servers"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "vk_cloud",
+    "name": "VK Cloud GPU, Kazakhstan offering",
+    "parent_vendor": "VK",
+    "category": "enterprise-gpu",
+    "training_mode": "GPU infrastructure and ML-development training candidate",
+    "accelerator": "NVIDIA H200",
+    "free_offer": "none-verified",
+    "offer_notes": "Current Kazakhstan GPU rental offering; Russian-site entitlement not verified",
+    "interface": "Sales-qualified configurable cloud GPU and ML platform",
+    "limits": "Actual training images/API, rates and account-region availability require qualification",
+    "sources": [
+      "https://vkcloud.kz/promopage/cloud-gpu-h200/",
+      "https://vkcloud.kz/pricelist/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "ps_cloud",
+    "name": "PS Cloud Services GPU servers",
+    "parent_vendor": "PS Cloud Services",
+    "category": "gpu-cloud",
+    "training_mode": "Custom CUDA VM training candidate",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid server infrastructure; distinct from user-hardware colocation",
+    "interface": "GPU server creation, SSH and user-installed NVIDIA drivers",
+    "limits": "Exact bookable GPU, price and training performance unverified; drivers not automatically installed",
+    "sources": [
+      "https://docs.ps.kz/ru/cloud/cloud-server/quickstart/prepare-gpu-server",
+      "https://docs.ps.kz/ru/cloud/cloud-server/quickstart",
+      "https://www.ps.kz/en"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "core42",
+    "name": "Core42 Sovereign AI Cloud",
+    "parent_vendor": "G42",
+    "category": "gpu-cloud",
+    "training_mode": "GPU instance and managed-cluster training",
+    "accelerator": "NVIDIA / AMD; separate non-GPU accelerators",
+    "free_offer": "conditional-credit",
+    "offer_notes": "Paid hourly/committed compute; discretionary evaluation credits possible without guaranteed amount",
+    "interface": "Sovereign AI Cloud console; managed Kubernetes and Slurm",
+    "limits": "Tiered GPU vetting; distinguish Compass inference and accelerator-specific runtime compatibility",
+    "sources": [
+      "https://aicloud.core42.ai/",
+      "https://aicloud.core42.ai/news/core42-unveils-self-service-on-demand-ai-cloud-platform-with-nvidia-accelerated-computing-at-gitex-global-2025",
+      "https://www.core42.ai/gpuaas-services-agreement"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "resetdata",
+    "name": "ResetData",
+    "parent_vendor": "ResetData",
+    "category": "enterprise-gpu",
+    "training_mode": "Bare-metal, container and scheduled-cluster training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Australian enterprise/research GPUaaS; no universal free tier verified",
+    "interface": "Dedicated GPU access, Kubernetes/OpenShift and preconfigured job scheduling",
+    "limits": "Quote, exact GPU, API lifecycle and minimum allocation require account qualification",
+    "sources": [
+      "https://resetdata.com.au/",
+      "https://resetdata.com.au/ai-factories"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "iren",
+    "name": "IREN AI Cloud",
+    "parent_vendor": "IREN",
+    "category": "enterprise-gpu",
+    "training_mode": "Bare-metal cluster model training and fine-tuning",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Current GPU rental product rather than planned datacenter capacity",
+    "interface": "Root access; InfiniBand; Docker/Apptainer; user frameworks and datasets",
+    "limits": "Sales quote, term, minimum node size and control API unverified",
+    "sources": [
+      "https://www.iren.com/solutions/gpu-cloud/ai-cloud"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "scaile",
+    "name": "Scaile",
+    "parent_vendor": "xAmplify",
+    "category": "enterprise-gpu",
+    "training_mode": "Partitioned GPU research training and inference",
+    "accelerator": "NVIDIA DGX A100",
+    "free_offer": "none-verified",
+    "offer_notes": "Presented with AUCloud and VAST Data; count platform once",
+    "interface": "Sales/test-drive GPUaaS platform with secure multi-user partitioning",
+    "limits": "Allocation, eligibility, interface and price require qualification",
+    "sources": [
+      "https://scaile.com.au/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "servercore",
+    "name": "Servercore GPU Cloud, Kazakhstan",
+    "parent_vendor": "Servercore Group",
+    "category": "gpu-cloud",
+    "training_mode": "GPU VM and Kubernetes training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Kazakhstan GPU cloud product; live account eligibility remains untested",
+    "interface": "PAYG GPU servers with dedicated PCI devices",
+    "limits": "Country/currency rules apply; some regions use Selectel infrastructure; avoid independent fleet totals",
+    "sources": [
+      "https://servercore.kz/services/cloud-based-gpu-servers/",
+      "https://servercore.com/legal-information/user-agreement/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "kazteleport",
+    "name": "Kazteleport GPU Cloud",
+    "parent_vendor": "Kazteleport",
+    "category": "enterprise-gpu",
+    "training_mode": "GPU VM development and model training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Current Kazakhstan GPU Cloud; paid by default",
+    "interface": "Sales-qualified GPU VMs with up to four GPUs per VM",
+    "limits": "Billing copy retains old future hourly-release date; verify actual term, rate and hardware",
+    "sources": [
+      "https://kazteleport.kz/services/oblachnye-servisy/gpu-cloud/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "hostkey",
+    "name": "HOSTKEY",
+    "parent_vendor": "HOSTKEY",
+    "category": "gpu-cloud",
+    "training_mode": "Dedicated GPU server and VPS neural-network training",
+    "accelerator": "NVIDIA / AMD",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid hourly/monthly GPU configurations across multiple regions",
+    "interface": "Control panel, API and rented-server execution",
+    "limits": "SKU availability differs; some preorder; AMD requires ROCm qualification",
+    "sources": [
+      "https://hostkey.com/gpu-dedicated-servers/neural-network-gpu/",
+      "https://hostkey.com/news/176-cost-effective-server-configurations-in-europe-the-us-and-turkey/"
+    ],
+    "status": "researched-not-implemented"
+  },
+  {
+    "id": "cloud4y",
+    "name": "Cloud4Y",
+    "parent_vendor": "Cloud4Y",
+    "category": "enterprise-gpu",
+    "training_mode": "Cloud/vGPU and dedicated-server model training",
+    "accelerator": "NVIDIA",
+    "free_offer": "none-verified",
+    "offer_notes": "Paid GPU rental; generic test-month promotions are not verified GPU allowances",
+    "interface": "ML-ready GPU environments with frameworks and Jupyter",
+    "limits": "Confirm full versus sliced GPU; migration promotions need explicit GPU coverage and limits",
+    "sources": [
+      "https://www.cloud4y.ru/cloud-hosting/gpu/",
+      "https://www.cloud4y.ru/cloud-hosting/artificial-intelligence-and-machine-learning/"
+    ],
+    "status": "researched-not-implemented"
+  }
+]

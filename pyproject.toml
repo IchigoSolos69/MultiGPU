@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multigpu-local"
-version = "0.4.3"
+version = "0.4.4"
 description = "Train with your own local and notebook compute accounts"
 requires-python = ">=3.11"
 dependencies = []
@@ -23,4 +23,4 @@ multigpu = "multigpu.server:main"
 include = ["multigpu*"]
 
 [tool.setuptools.package-data]
-multigpu = ["static/*"]
+multigpu = ["static/*", "data/provider-research.json"]

@@ -1,5 +1,13 @@
 # MultiGPU interface
 
+## Version 0.4.4 provider research
+
+Extend the existing developer-tool workspace with a compact evidence ledger. The provider directory combines integrated resources and researched options, with separate integration and cost labels. Keep training selectors limited to existing integrations. Search, cost/access filters and 25-row pagination make the larger directory usable; do not create a wall of provider cards.
+
+Reuse the existing Segoe/Consolas typography, neutral sheet surfaces, blue action token, 6px controls and quiet panel borders. A readable in-app report viewer shows the bundled research, source dates and official links. Provider detail sheets lead with integration status, offer conditions and actual training mode. Research reports use restrained headings and horizontally contained tables; phone controls stack and preserve keyboard focus. No remote fonts, decorative motion or new palette is needed.
+
+Chrome review at 1440px and 390px verified directory pagination, readable research tables, contained horizontal scrolling, escaped HTML, failed-read retry, late-response handling and keyboard focus restoration. A mobile header issue was repaired with a nonshrinking 44px close control and scroll reset; its bounds are tested in fresh and reopened readers. Design review: AI Slop Score 2/10; Distinctiveness 7/10. The familiar control-panel frame remains, while the offer/integration evidence comparison and offline research reader carry the product-specific workflow. Live provider execution remains outside this UI qualification.
+
 ## Version 0.4 journey refinements
 
 Operate mode and the existing framed workspace remain. Built-in recipes and custom scripts are peer choices. Account verification, allowance, actual hardware and qualification use separate labels. Review shows the exact resolved mode; blocked actions lead to corrections. Manual sessions emphasize notebook handoff/import instead of empty live charts. Recovery shows the saved attempt, explicit console confirmation and its provenance; a focused form keeps the snapshot the user reviewed. Polling updates status and actions without replacing focused controls or selected logs. Named prediction features and verified delivery lead the completed run. Windows recovery and tray notifications use native surfaces.

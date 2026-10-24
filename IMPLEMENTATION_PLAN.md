@@ -1,5 +1,13 @@
 # MultiGPU user journey implementation plan
 
+## Version 0.4.4: bundled provider research — completed 25 October 2026
+
+- Added 142 researched compute offerings/access routes alongside the existing 14 resources, with separate cost and integration labels, search, filters and pagination.
+- Bundled 13 detailed official-source reports and a CSV comparison for reading inside the app without network access.
+- Corrected Paperspace's free-compute wording; kept credits, conditional GPU access, institutional allocations and paid compute distinct.
+- Kept unimplemented research entries outside account probes and training selection. Live provider qualification remains required before admitting new workers.
+- Verified backend/API boundaries, safe report rendering, desktop/mobile browsing, keyboard recovery, existing local training/export and the Windows payload. See [VALIDATION.md](VALIDATION.md) for evidence and installer identity.
+
 ## Official-source research and documentation: 24 October 2026
 
 The completed [provider audit](docs/PROVIDER_RESEARCH.md) separates free GPU, conditional GPU, recurring/introductory credits, free CPU, paid compute and existing hardware. The expanded README documents the current implementation and operating limits. This documentation update does not reship the 0.4.3 binary.

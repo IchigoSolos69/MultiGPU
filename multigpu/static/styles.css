@@ -687,4 +687,43 @@ input,textarea{caret-color:var(--accent)}
 @media(max-width:1100px){.task-options{grid-template-columns:1fr}.task-option{padding:13px 14px}}
 @media(max-width:540px){.field select,.field textarea{font-size:16px;min-height:44px}.path-control{flex-wrap:wrap}.path-control>input{flex-basis:140px}.path-control>.button{min-height:44px}.draft-restore-note{font-size:13px}.job-attention{font-size:12px}}
 
+/* Research is an evidence ledger alongside the existing setup workflows. */
+.directory-summary{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+.directory-summary p{font-size:13px;margin:0}.directory-summary strong{color:var(--ink)}
+.directory-filters{flex-wrap:wrap;align-items:center;gap:12px}
+.directory-filters .filter-tabs{flex:1 1 490px}.directory-filters .search-field{flex:1 1 260px;width:auto}
+.directory-cost-label{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.directory-cost-label select,.research-reader-controls select{max-width:100%;min-height:38px;border:1px solid var(--control-line);border-radius:6px;background:white;color:var(--ink);font:inherit;padding:7px 10px}
+.cost-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.cost-badge{font-size:11px;line-height:1.5;border:1px solid var(--line);border-radius:4px;padding:2px 6px;color:var(--muted);background:var(--subtle)}
+.provider-table td{overflow-wrap:anywhere}.provider-table .button{white-space:normal}
+.directory-pagination{display:flex;align-items:center;justify-content:flex-end;gap:15px;margin-top:16px;font-size:13px;color:var(--muted)}
+.research-dialog{width:min(1040px,calc(100vw - 40px));max-height:calc(100dvh - 40px);overflow-y:auto;overflow-x:hidden}
+.research-dialog .dialog-header{position:sticky;top:0;background:var(--sheet,#fff);z-index:2}
+.research-dialog .dialog-header>div{min-width:0;flex:1}.research-dialog .dialog-header h2{overflow-wrap:anywhere}
+.research-dialog .dialog-header>.icon-button{flex:0 0 36px;width:36px;height:36px}
+.research-dialog .dialog-body{min-width:0}.research-status p{margin:5px 0 0}
+.research-facts{margin:20px 0 0}.research-facts>div{display:grid;grid-template-columns:145px minmax(0,1fr);gap:18px;padding:11px 0;border-bottom:1px solid var(--line)}
+.research-facts dt{font-size:13px;color:var(--muted)}.research-facts dd{font-size:13px;margin:0;line-height:1.7;overflow-wrap:anywhere}
+.research-detail-section{padding-top:8px;margin-top:16px;border-top:1px solid var(--line)}
+.research-report-links{display:flex;flex-wrap:wrap;gap:8px}.research-report-links .button{white-space:normal;text-align:left;line-height:1.6}
+.research-sources{padding-left:20px}.research-sources li{padding:5px 0;font-size:13px;overflow-wrap:anywhere}
+.research-sources .text-link{display:inline;overflow-wrap:anywhere}.research-sources svg{display:inline;width:13px;height:13px;margin-left:5px}
+.research-reader-controls{display:flex;gap:14px;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.research-reader-controls label{display:flex;flex:1;flex-direction:column;gap:6px;min-width:0;font-size:13px;color:var(--muted)}
+.research-content{min-width:0;line-height:1.8;overflow-wrap:anywhere}.research-content p{margin:12px 0}
+.research-content h2{font-size:23px;margin:8px 0 18px;line-height:1.4;letter-spacing:-.3px}
+.research-content h3{font-size:19px;margin:30px 0 12px;line-height:1.5}.research-content h4{font-size:16px;margin:24px 0 10px}
+.research-content h5,.research-content h6{font-size:14px;margin:20px 0 8px}
+.research-content li{font-size:13px;margin:8px 0;line-height:1.8}.research-content ul,.research-content ol{padding-left:22px}
+.research-content .text-link{display:inline;white-space:normal;overflow-wrap:anywhere}.research-content .text-link svg{display:inline;width:12px;height:12px;margin-left:4px}
+.research-link{display:inline;border:0;background:none;padding:0;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:normal}
+.research-content code{font-family:Consolas,monospace;font-size:12px}.research-content pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:14px;background:var(--subtle);border:1px solid var(--line);border-radius:6px}
+.research-table-scroll{max-width:100%;overflow-x:auto;margin:18px 0;border:1px solid var(--line);border-radius:6px}
+.research-table-scroll table{width:100%;min-width:620px;border-collapse:collapse;table-layout:auto}
+.research-table-scroll th,.research-table-scroll td{font-size:13px;text-align:left;vertical-align:top;padding:12px;min-width:120px;border-bottom:1px solid var(--line);line-height:1.7}
+.research-table-scroll th{background:var(--subtle);font-weight:600}.research-table-scroll tr:last-child td{border-bottom:0}
+@media(max-width:760px){.directory-summary{align-items:flex-start;flex-direction:column}.directory-filters .filter-tabs,.directory-filters .search-field{flex-basis:auto}.directory-filters .search-field{width:100%}.directory-cost-label{justify-content:space-between}.directory-cost-label select{min-width:190px}.research-reader-controls{align-items:stretch;flex-direction:column}.research-facts>div{grid-template-columns:115px minmax(0,1fr);gap:12px}}
+@media(max-width:540px){.directory-summary .button-row{width:100%;align-items:stretch}.directory-summary .button{flex:1;white-space:normal;font-size:12px;min-height:44px}.directory-filters .filter-tabs{justify-content:flex-start;gap:3px}.directory-filters .filter-tab{padding:7px 9px;min-height:42px}.directory-cost-label select{font-size:16px;min-height:44px;min-width:0;width:65%}.cost-badge{font-size:12px}.research-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 24px)}.research-dialog .dialog-body{padding:18px}.research-dialog .dialog-header>.icon-button{flex-basis:44px;width:44px;height:44px}.research-facts>div{grid-template-columns:1fr;gap:3px}.research-reader-controls select{font-size:16px;min-height:44px}.research-content h2{font-size:21px}.research-report-links .button{min-height:44px}.research-link{min-height:32px}.directory-pagination{justify-content:space-between;gap:8px}}
+
 .skip-link:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap;padding:0}

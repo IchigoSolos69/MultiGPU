@@ -1,4 +1,4 @@
-"""Provider facts checked on 2026-10-23; Modal availability reviewed 2026-10-24.
+"""Provider facts reviewed against the official-source audit on 2026-10-24.
 
 Capabilities describe this application, not an account's entitlements.
 """
@@ -10,7 +10,7 @@ MODAL_NOTEBOOK_RETIREMENT = ("Modal hosted notebooks were retired on 23 October 
 
 
 def _provider(id, name, kind, integration, free_summary, signup_url, docs_url,
-              setup_steps, restrictions, badges=(), source_checked="2026-10-23"):
+              setup_steps, restrictions, badges=(), source_checked="2026-10-24"):
     automatic = id in {"kaggle", "modal", "lightning", "local"}
     return dict(id=id, name=name, kind=kind, integration=integration,
                 badges=list(badges), free_summary=free_summary,
@@ -48,14 +48,14 @@ CATALOG = [
                "Batch output is downloaded after execution. Mid-run metrics depend on provider logs."],
               ["Free GPU quota", "CLI adapter"]),
     _provider("paperspace", "Paperspace Notebooks", "gpu", "guided",
-              "A free M4000 notebook is listed, subject to capacity. Other included machines depend on the subscription.",
+              "Paid GPU notebooks. New-account free compute availability is unverified; check your account's actual machine prices.",
               "https://www.paperspace.com/notebooks", "https://docs.digitalocean.com/products/paperspace/notebooks/",
-              ["Sign up directly with Paperspace and inspect available free machines.",
+              ["Sign up directly with Paperspace and inspect actual machine access and prices.",
                "Follow the in-app guide, upload training.ipynb, and run its training cell.",
                "Download the output folder after training."],
               ["Legacy Gradient notebook APIs are deprecated; this app does not automate their lifecycle.",
-               "Additional storage and paid machines may incur charges. Free GPU availability is not guaranteed."],
-              ["Assisted notebook", "Capacity dependent"]),
+               "Official pages still contain free-machine claims, but no current new-account entitlement was verified. Storage and machines may incur charges."],
+              ["Paid GPU", "Free access unverified"]),
     _provider("lightning", "Lightning AI Studios", "gpu", "automatic",
               "Eligible signup credits can cover GPU usage; the free CPU Studio is separate. Inspect the actual balance.",
               "https://lightning.ai/", "https://lightning.ai/docs/platform/developers/sdk/studio/",
@@ -149,6 +149,29 @@ CATALOG = [
               ["Cloud Free Trial restrictions and GPU quotas apply. API lifecycle automation is not implemented here."],
               ["Cloud project required"]),
 ]
+
+
+# Published cost categories never replace an account probe or admission checks.
+_RESEARCH_FACTS = {
+    "local": (["institutional"], "providers-credits"),
+    "kaggle": (["free_gpu", "free_cpu"], "providers-gpu"),
+    "paperspace": (["paid_gpu"], "providers-gpu"),
+    "lightning": (["free_cpu", "introductory_credit", "paid_gpu"], "providers-credits"),
+    "modal": (["recurring_credit", "paid_gpu"], "providers-credits"),
+    "codespaces": (["free_cpu"], "providers-cloud"),
+    "deepnote": (["free_cpu", "paid_gpu"], "providers-notebooks"),
+    "hex": (["free_cpu", "paid_gpu"], "providers-notebooks"),
+    "databricks": (["free_cpu", "conditional_gpu", "paid_gpu"], "providers-cloud"),
+    "datalore": (["free_cpu", "paid_gpu"], "providers-notebooks"),
+    "jupyterhub": (["institutional"], "providers-cloud"),
+    "colab": (["free_gpu", "free_cpu", "paid_gpu"], "providers-gpu"),
+    "fastero": ([], "providers-notebooks"),
+    "colab-enterprise": (["paid_gpu"], "providers-cloud"),
+}
+for _record in CATALOG:
+    _tags, _report = _RESEARCH_FACTS[_record["id"]]
+    _record.update(cost_tags=_tags, research_only=False, report_ids=[_report],
+                   sources=list(dict.fromkeys(url for url in (_record["docs_url"], _record["signup_url"]) if url)))
 
 
 def get_provider(provider_id):

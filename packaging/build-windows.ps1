@@ -1,4 +1,4 @@
-param([string]$Version = '0.4.3', [string]$Compiler, [switch]$PrepareOnly)
+param([string]$Version = '0.4.4', [string]$Compiler, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = Join-Path $repository 'build'
@@ -33,11 +33,33 @@ $actualVersion = (& $python.FullName -c 'import platform; print(platform.python_
 if ($actualVersion -ne $pythonVersion) { throw "Expected Python $pythonVersion; found $actualVersion." }
 
 # An explicit allowlist prevents credentials, exports, .env, tests and local state from entering the installer.
-$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','notebook_runtime.py','planner.py','prediction.py','process_control.py','recipes.py','server.py','service.py','store.py','worker.py')
+$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','notebook_runtime.py','planner.py','prediction.py','process_control.py','recipes.py','research.py','server.py','service.py','store.py','worker.py')
 $appRoot = Join-Path $payload 'multigpu'
 New-Item -ItemType Directory -Path (Join-Path $appRoot 'static') -Force | Out-Null
 foreach ($name in $appFiles) { Copy-Item -LiteralPath (Join-Path $repository "multigpu/$name") -Destination $appRoot }
 foreach ($name in @('app.js','index.html','styles.css')) { Copy-Item -LiteralPath (Join-Path $repository "multigpu/static/$name") -Destination (Join-Path $appRoot 'static') }
+New-Item -ItemType Directory -Path (Join-Path $appRoot 'data') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $repository 'multigpu/data/provider-research.json') -Destination (Join-Path $appRoot 'data')
+# Public research is bundled for in-app reading without a network connection.
+$researchFiles = @(
+    'docs/PROVIDER_RESEARCH.md', 'docs/ADDITIONAL_PROVIDERS.md',
+    'docs/research/providers-gpu-2026-10-24.md',
+    'docs/research/providers-credits-2026-10-24.md',
+    'docs/research/providers-notebooks-2026-10-24.md',
+    'docs/research/providers-cloud-2026-10-24.md',
+    'docs/research/additional-gpu-clouds-2026-10-24.md',
+    'docs/research/additional-clouds-grants-2026-10-24.md',
+    'docs/research/additional-free-compute-2026-10-24.md',
+    'docs/research/additional-regional-managed-2026-10-24.md',
+    'docs/research/additional-asia-clouds-2026-10-24.md',
+    'docs/research/additional-regional-expansion-2026-10-24.md',
+    'docs/research/additional-training-platforms-2026-10-24.md',
+    'docs/research/additional-provider-directory-2026-10-24.csv'
+)
+New-Item -ItemType Directory -Path (Join-Path $payload 'docs/research') -Force | Out-Null
+foreach ($relative in $researchFiles) {
+    Copy-Item -LiteralPath (Join-Path $repository $relative) -Destination (Join-Path $payload $relative)
+}
 foreach ($name in @('start-desktop.ps1','start.ps1','start.cmd','README.md')) { Copy-Item -LiteralPath (Join-Path $repository $name) -Destination $payload }
 New-Item -ItemType Directory -Path (Join-Path $payload 'packaging') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'launcher-common.ps1') -Destination (Join-Path $payload 'packaging')
