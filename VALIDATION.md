@@ -1,4 +1,22 @@
-# MultiGPU 0.4.3 validation
+# MultiGPU 0.4.4 validation
+
+Verified on **25 October 2026**. The Windows build adds 142 research entries alongside the 14 existing resources, with cost/access filters, pagination, provider evidence and an offline reader for 13 reports. Research-only entries remain outside provider authentication and training selection. Source research dates remain 24 October 2026; this release does not establish live provider entitlements.
+
+| Fresh check | Result | Evidence |
+|---|---|---|
+| Full Python regression | **238 passed, no skips** | [Log](.test-runs/v044-python-tests.log) |
+| Research data and API boundaries | Complete 142-row CSV/data agreement; 13 fixed document IDs; research entries cannot probe or launch; path traversal rejected; Markdown served as data; free GPU distinguished from credits and unverified access | tests/test_research.py in full suite |
+| Research browser journey | Search, pagination, cost filters, safe Markdown/tables/links, failed-read retry, ignored stale responses, keyboard focus restoration and research exclusion from training passed at 1440px and 390px | [Proof](.test-runs/browser/research-proof.json), [mobile close-control bounds](.test-runs/browser/research-mobile-header-bounds.json) |
+| Existing browser workflows | Provider tools and observations passed; real local training/pause/resume/export/predict, saved drafts and assisted handoff checks passed | [Training journey](.test-runs/v044-browser-smoke.log); provider-tools/provider-observations suites |
+| Final Windows payload | Bundled Python 3.12.15; 142 discovery entries, all 13 reports and CSV readable locally; research execution disabled; real CPU training/export and persisted restart passed with system Python excluded | [Payload acceptance](<build/smoke install 330c375c474a411f8a416a21d5395275/acceptance-result.json>) |
+| Windows native host | Downloads, clipboard, notebook handoff, navigation guards, browser/controller recovery, second launch and exit passed in an isolated configuration. Accepted native binaries match the final payload; final research JavaScript is covered by the browser checks and source hash comparison | [Native acceptance](<build/native acceptance 018fc2fd63364efa821717223165cacb/native reports/native-acceptance-result.json>) |
+| Build integrity | **3,474 manifest files** verified; no unlisted files; packaged sources/research match the workspace; installer, checksum and manifest identities agree | [Source audit](.test-runs/v044-source-audit.json) |
+
+Installer: [MultiGPU-0.4.4-Setup.exe](dist/MultiGPU-0.4.4-Setup.exe), **31,642,666 bytes**. SHA-256: `88c7e6b6e3b7dff322115b1900ed45a5cddd33635a65f53c7f6467afe278ec43`. Manifest SHA-256: `a3808a4302a83c8430eb8a0a99a1ff61547e335297d4d7c2c5bf94362ba1cca2`. [Release record](dist/acceptance-results-0.4.4.json).
+
+No provider accounts or paid compute were used. The existing registered installation and user workspace were preserved; installer upgrade/uninstall replay was not run against that installation. Live cloud lifecycle/billing, new CUDA/ROCm/TPU/Gaudi qualification, clean-machine WebView2 installation and installer signing remain unverified. The additional directory entries are published research, not newly implemented training adapters.
+
+## Retained 0.4.3 qualification
 
 Verified on 24 October 2026. Modal retired its hosted notebook editor on 23 October; its Functions API still supports GPU workloads. This patch retains the Functions/Volumes connector and removes obsolete Modal notebook preparation, downloads and fallback instructions. Existing checkpoint/model import and recovery remain available. Automatic free-only admission remains blocked until independent zero-spend enforcement is verified.
 
