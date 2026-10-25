@@ -15,7 +15,7 @@ const fs=require('node:fs/promises');
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url());
   const send=value=>route.fulfill({json:value,headers:{'X-MultiGPU-Token':'fixture'}});
-  if(url.pathname==='/api/bootstrap'){const data=structuredClone(bootstrap());if(holdBoot){holdBoot=false;heldBoot=()=>send(data);return;}return send(data);}
+  if(['/api/bootstrap','/api/runtime'].includes(url.pathname)){const b=bootstrap(),data=structuredClone(url.pathname==='/api/runtime'?{jobs:b.jobs,environment_tasks:b.environment_tasks,connections:Object.fromEntries(b.providers.map(p=>[p.id,p.connection]))}:b);if(holdBoot){holdBoot=false;heldBoot=()=>send(data);return;}return send(data);}
   if(url.pathname==='/api/draft')return send({draft:{}});
   if(url.pathname==='/api/environment/tasks')return send({tasks:[]});
   if(url.pathname==='/api/providers/kaggle/setup')return send(guide());

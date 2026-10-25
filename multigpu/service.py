@@ -12,6 +12,8 @@ import threading
 import time
 import uuid
 import zipfile
+from collections import deque
+from datetime import datetime, timezone
 
 from .catalog import CATALOG
 from . import connectors
@@ -64,6 +66,10 @@ class Service:
         self.threads = {}
         self.closing = threading.Event()
         self.hardware = hardware_info()
+        self._event_readers = {}
+        self._event_lock = threading.RLock()
+        self._ingest_cursors = {}
+        self._launch_clocks = {}
         self._migrate()
         for job in self.store.all("job"):
             if self._manually_resolved(job) or job.get("submission_status") == "not_started":
@@ -215,6 +221,18 @@ class Service:
                 "environment_tasks": environment.recent() if environment else [],
                 "app": {"name": "MultiGPU", "version": __version__, "workspace_dir":str(self.root), "runtime_base_prefix": sys.base_prefix}, "recipes": [{**r,"supports_demo":r["id"] in ("starter","pytorch")} for r in RECIPES], "desktop_available": os.name == "nt"}
 
+    def runtime_snapshot(self):
+        """Mutable observations only; catalog and research arrive once at bootstrap."""
+        environment = getattr(self, "environment", None)
+        connections = self.connections()
+        connections["local"] = {**connections.get("local", {}), "ready": True, "checked_at": self.hardware.get("checked_at"),
+                                "detail": "Available on this computer.", "actual_resource": {
+                                    "machine": str(self.hardware.get("cpu_count") or "Available") + " CPU threads",
+                                    "status": "CUDA available" if self.hardware.get("cuda_available") else "CPU available",
+                                    "gpu_names": [g["name"] for g in self.hardware.get("gpus", [])] if self.hardware.get("cuda_available") else []}}
+        return {"connections": connections, "jobs": self.jobs(), "hardware": self.hardware,
+                "settings": self.settings(), "environment_tasks": environment.recent() if environment else []}
+
     def probe(self, pid, config):
         if pid not in {p["id"] for p in CATALOG}:
             raise ValueError("Unknown provider.")
@@ -299,16 +317,27 @@ class Service:
         job["allowed_actions"] = self._allowed_actions(job)
         return job
 
-    def job(self, jid, include_events=False):
+    def job(self, jid, include_events=False, observations_revision=None):
         if not jid or any(c not in "0123456789abcdef" for c in jid):
             raise ValueError("Invalid job identifier.")
         job = self.store.get("job", jid)
         if job is None:
             raise KeyError("Training run not found.")
         if include_events:
-            events = self.read_events(jid)
-            job["events"] = events[-500:]
-            job["metrics"] = [e for e in events if e.get("type") == "metric"][-2000:]
+            observations = []
+            for name in ("events.jsonl", "imported-history.jsonl", "worker.log"):
+                path = self.jobs_root / jid / name
+                stat = path.stat() if path.is_file() else None
+                observations.append((name, stat.st_size, stat.st_mtime_ns, stat.st_ino) if stat else (name,))
+            revision = hashlib.sha256(json.dumps(observations).encode()).hexdigest()
+            job["observations_revision"] = revision
+            job["observations_unchanged"] = observations_revision == revision
+            if not job["observations_unchanged"]:
+                events = self.read_events(jid)
+                job["events"] = events[-500:]
+                observed = {(e.get("attempt_id"), e.get("step")): e for e in events if e.get("loss") is not None
+                            and e.get("type") in {"metric", "checkpoint", "completed", "paused", "error"}}
+                job["metrics"] = list(observed.values())[-2000:]
         return self._describe_job(job)
 
     def _allowed_actions(self, job):
@@ -435,6 +464,8 @@ class Service:
         result["preflight"] = report
         result["warnings"].extend(report.get("warnings", []))
         result["spec"] = spec
+        from .performance import recommendations
+        result["performance_recommendations"] = recommendations(spec, result["decisions"], self.jobs(), report.get("fingerprint"), self.hardware, self.connections())
         identities = {pid: self.connections().get(pid, {}).get("config", {}) for pid in spec["providers"]}
         digest = {"spec": spec, "fingerprint": report.get("fingerprint"), "selected_provider": result["selected_provider"], "execution_mode": result.get("execution_mode"), "resolved_device": result.get("resolved_device"), "resolved_resource": result.get("resolved_resource"), "accounts": identities}
         result["preview_digest"] = hashlib.sha256(json.dumps(digest, sort_keys=True, allow_nan=False).encode()).hexdigest()
@@ -492,31 +523,58 @@ class Service:
         temp.write_text(json.dumps(value, indent=2, allow_nan=False), encoding="utf-8")
         os.replace(temp, path)
 
-    def read_events(self, jid, include_history=True):
-        path = self.jobs_root / jid / "events.jsonl"
-        events = []
-        paths = [path]
-        if include_history:
-            paths.append(self.jobs_root / jid / "imported-history.jsonl")
-        for source in paths:
-            if not source.is_file():
-                continue
-            with source.open("rb") as raw:
-                size = source.stat().st_size
-                raw.seek(max(0, size - 2 * 1024 * 1024))
-                if raw.tell():
-                    raw.readline()
-                lines = raw.read().decode("utf-8", errors="replace").splitlines()
-            for line in lines:
+    def _event_source(self, source):
+        previous = self._event_readers.get(str(source), {})
+        if not source.is_file():
+            self._event_readers[str(source)] = {"items": [], "sequence": previous.get("sequence", 0)}
+            return {"items": [], "sequence": previous.get("sequence", 0)}
+        with source.open("rb") as raw:
+            stat = os.fstat(raw.fileno())
+            identity = (stat.st_dev, stat.st_ino)
+            offset = previous.get("offset", 0)
+            reset = previous.get("identity") != identity or stat.st_size < offset
+            if not reset and offset:
+                raw.seek(max(0, offset - 64))
+                reset = raw.read(min(64, offset)) != previous.get("boundary")
+            state = {"identity": identity, "offset": 0, "items": deque(maxlen=8000), "sequence": previous.get("sequence", 0)} if reset else previous
+            start = state.get("offset", 0)
+            # Read only complete lines; keep a bounded tail when reconnecting.
+            if stat.st_size - start > 2 * 1024 * 1024:
+                raw.seek(stat.st_size - 2 * 1024 * 1024)
+                raw.readline(65537)
+                start = raw.tell()
+            raw.seek(start)
+            content = raw.read(2 * 1024 * 1024)
+            complete = content.rfind(b"\n") + 1
+            for line in content[:complete].splitlines():
                 try:
                     event = json.loads(line)
                     if isinstance(event, dict):
-                        events.append(event)
-                except ValueError:
+                        state["sequence"] += 1
+                        state["items"].append((state["sequence"], event))
+                except (ValueError, UnicodeError):
                     continue
-        if include_history:
-            events.sort(key=lambda item: item.get("timestamp", ""))
-        return events
+            state["offset"] = start + complete
+            raw.seek(max(0, state["offset"] - 64))
+            state["boundary"] = raw.read(min(64, state["offset"]))
+            self._event_readers[str(source)] = state
+            return state
+
+    def read_events(self, jid, include_history=True, incremental=False):
+        with self._event_lock:
+            paths = [self.jobs_root / jid / "events.jsonl"]
+            if include_history:
+                paths.append(self.jobs_root / jid / "imported-history.jsonl")
+            events = []
+            for source in paths:
+                state = self._event_source(source)
+                cursor = self._ingest_cursors.get(str(source), 0) if incremental else 0
+                events.extend(event for sequence, event in state["items"] if sequence > cursor)
+                if incremental:
+                    self._ingest_cursors[str(source)] = state["sequence"]
+            if include_history:
+                events.sort(key=lambda item: item.get("timestamp", ""))
+            return events
 
     def _start(self, jid):
         thread = threading.Thread(target=self._run, args=(jid,), daemon=True, name="train-" + jid[:8])
@@ -526,8 +584,22 @@ class Service:
     def _ingest(self, job):
         # Imported observations are display history only, never worker liveness,
         # progress mutations, or terminal acknowledgments for a new attempt.
-        events = self.read_events(job["id"], include_history=False)
+        events = self.read_events(job["id"], include_history=False, incremental=True)
+        if job["id"] in self._launch_clocks:
+            started = next((e for e in events if e.get("type") == "started" and e.get("attempt_id") == job["spec"].get("attempt_id")), None)
+            if started:
+                wall_start = self._launch_clocks.pop(job["id"])
+                try:
+                    duration = max(0, (datetime.fromisoformat(started["timestamp"]) - wall_start).total_seconds())
+                    job.setdefault("performance", {}).setdefault("controller_stages_seconds", {})["provider_startup"] = round(duration, 6)
+                except (ValueError, TypeError, KeyError):
+                    pass
         for event in events:
+            if event.get("attempt_id") is not None and event.get("attempt_id") != job["spec"].get("attempt_id"):
+                continue
+            if isinstance(event.get("performance"), dict) and event.get("attempt_id") == job["spec"].get("attempt_id"):
+                controller = (job.get("performance") or {}).get("controller_stages_seconds", {})
+                job["performance"] = {**event["performance"], "controller_stages_seconds": controller}
             job["last_worker_event_at"] = event.get("timestamp", job.get("last_worker_event_at"))
             if event.get("type") == "metric":
                 job["last_progress_at"] = event.get("timestamp")
@@ -561,6 +633,7 @@ class Service:
     def _run(self, jid):
         path = self.jobs_root / jid
         job = self.job(jid)
+        preparation_started = time.monotonic()
         try:
             if (path / "STOP").exists():
                 job.update(status="paused", phase="paused", message="Paused before a new execution was submitted.")
@@ -584,6 +657,11 @@ class Service:
                 if self.closing.is_set():
                     return
             job["spec"]["attempt_id"] = uuid.uuid4().hex
+            preparation_started = time.monotonic()
+            if job.get("performance", {}).get("source") == "worker":
+                job["performance_attempts"] = [*job.get("performance_attempts", []), job["performance"]][-20:]
+            job["performance"] = {"format": "multigpu-performance-v1", "source": "controller",
+                                  "attempt_id": job["spec"]["attempt_id"], "controller_stages_seconds": {}}
             job["spec"]["execution_provider"] = job["provider_id"]
             from .datasets import fingerprint_for_spec
             if job["spec"].get("fingerprint") and fingerprint_for_spec(job["spec"]) != job["spec"]["fingerprint"]:
@@ -604,6 +682,15 @@ class Service:
             job["allowance_observation"] = observation
             job["spec"]["allowance_observation"] = observation
             execution_spec = dict(job["spec"])
+            if execution_spec.get("resume_from") and job.get("last_progress_at"):
+                from .artifacts import load_checkpoint
+                resumed_state = load_checkpoint(Path(execution_spec["resume_from"]))
+                execution_spec["observed_repeated_steps"] = max(0, job.get("step", 0) - resumed_state["step"])
+            history = [other for other in self.jobs() if other["id"] != jid and other.get("status") == "completed"
+                       and other.get("provider_id") == job["provider_id"] and other.get("fingerprint") == job.get("fingerprint")]
+            reserves = [sum((other.get("performance", {}).get("stages_seconds", {}).get(stage) or 0) for stage in ("evaluation", "export")) for other in history]
+            if reserves:
+                execution_spec["delivery_reserve_seconds"] = max(reserves)
             if delivery:
                 recovery = job["delivery"]
                 execution_spec.update(device="cpu", delivery_only=True, resume_from=recovery["checkpoint"]["path"],
@@ -611,11 +698,13 @@ class Service:
             self._write_json(path / "spec.json", execution_spec)
             job.update(status="running", phase="preparing", message="Preparing the training environment.")
             self.save_job(job)
+            self._controller_cost(job, "preparation", preparation_started)
             if job["provider_id"] == "local":
                 env = os.environ.copy()
                 package_root = str(Path(__file__).resolve().parent.parent)
                 env["PYTHONPATH"] = package_root + os.pathsep + env.get("PYTHONPATH", "")
                 with (path / "worker.log").open("a", encoding="utf-8") as log:
+                    self._launch_clocks[jid] = datetime.now(timezone.utc)
                     process = subprocess.Popen([sys.executable, "-m", "multigpu.worker", "--spec", str(path / "spec.json"), "--output", str(path)], stdout=log, stderr=subprocess.STDOUT, env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                     self.processes[jid] = process
                     job.update(phase="evaluating" if delivery else "training", local_pid=process.pid)
@@ -643,7 +732,9 @@ class Service:
                     self._continue_to_next(job)
             else:
                 config = self.connections().get(job["provider_id"], {}).get("config", {})
+                staging_started = time.monotonic()
                 intent = connectors.prepare(job["provider_id"], config, path / "spec.json", path)
+                self._controller_cost(job, "staging", staging_started)
                 if (path / "STOP").exists():
                     job.update(status="paused", phase="paused", submission_status="prepared", message="Paused before provider submission.")
                     self.save_job(job)
@@ -651,7 +742,10 @@ class Service:
                 job.update(submission_intent=intent, submission_status="submitting", phase="submitting", connection_status="connected")
                 self.save_job(job)
                 try:
+                    submission_started = time.monotonic()
                     handle = connectors.submit(job["provider_id"], config, path / "spec.json", path, intent=intent)
+                    # SDK submission may include upload and provisioning; do not invent a split.
+                    self._controller_cost(job, "submission_upload_and_startup", submission_started)
                 except Exception as exc:
                     self._log_provider_error(jid, exc, "submission", job["provider_id"])
                     known_not_started = getattr(exc, "submission_outcome", "unknown") == "not_started"
@@ -683,6 +777,14 @@ class Service:
                 job.update(submission_status="not_started", cleanup_status="not_required")
             job["submission_evidence"] = getattr(exc, "submission_evidence", None)
             self.save_job(job)
+
+    @staticmethod
+    def _controller_cost(job, stage, started):
+        performance = job.setdefault("performance", {})
+        performance.setdefault("source", "controller")
+        performance.setdefault("format", "multigpu-performance-v1")
+        performance.setdefault("controller_stages_seconds", {})[stage] = round(time.monotonic() - started, 6)
+        performance["controller_observed_at"] = now()
 
     @staticmethod
     def _pristine_pause(job):
@@ -723,12 +825,14 @@ class Service:
         job.update(phase="collecting", remote_terminal=True, connection_status="connected")
         self.save_job(job)
         collection_error = None
+        collection_started = time.monotonic()
         try:
             connectors.collect(job["provider_id"], config, job["handle"], path)
         except Exception as exc:
             self._log_provider_error(jid, exc, "result collection", job["provider_id"])
             collection_error = str(exc)
         handle = job["handle"]  # collect may acknowledge cleanup even when it raises afterwards.
+        self._controller_cost(job, "collection", collection_started)
         job = self._ingest(self.job(jid))
         job["handle"] = handle
         cleanup = handle.get("cleanup_status", "verified" if handle.get("studio_stopped") else "retained")
@@ -1039,7 +1143,13 @@ class Service:
         snapshot = {"action": action, "job_id": job["id"], "recovery_token": job["recovery_token"],
                     "checkpoint_sha256": checkpoint["sha256"], "target": target, "plan_digest": plan["preview_digest"]}
         digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        from .performance import continuation_advice
+        advice = None
+        if action == "continue-guided":
+            current = self._resource_preview(job, [job["provider_id"]])
+            advice = continuation_advice(job, checkpoint, plan, self.jobs(), bool(current.get("eligible")))
         return {"preview_digest": digest, "provider_id": provider_id, "checkpoint": checkpoint, "target": target,
+                "continuation_performance": advice,
                 "plan": plan, "requires_stopped_confirmation": job.get("execution_mode") == "guided",
                 "optimizer_updates": 0 if action == "finish-delivery" else None}
 
@@ -1161,6 +1271,7 @@ class Service:
             destination = Path(selected) / jid
             if destination.resolve().is_relative_to(self.jobs_root.resolve()):
                 raise ValueError("Choose an export folder outside the application's internal jobs directory.")
+            started = time.monotonic()
             result = export_verified(path, destination)
             job["export_path"] = str(result)
             job["spec"]["output_dir"] = selected
@@ -1169,6 +1280,8 @@ class Service:
             job["artifacts"] = manifest["files"]
             job["inference"] = inference_capability(result, manifest)
             job["export_verified_at"] = now()
+            if job.get("performance"):
+                job["performance"].setdefault("controller_stages_seconds", {})["local_export"] = round(time.monotonic() - started, 6)
             if job.get("observation_source") == "notebook_import" and job.get("last_summary"):
                 job["last_summary"] = {**job["last_summary"], "required_action": "Model files are verified and saved locally."}
             job["phase"] = "completed"
@@ -1230,15 +1343,25 @@ class Service:
             raise ValueError("Pause training before cleaning downloaded caches.")
         # Keep models and checkpoints; remove only application-owned download copies.
         removed = 0
+        from .worker import worker_active
+        from .artifacts import _check_path
         for folder in self.jobs_root.iterdir():
             if not folder.is_dir() or folder.is_symlink():
                 continue
+            if worker_active(folder):
+                raise ValueError("Wait for every local worker to stop before cleaning caches.")
             for name in ("model.zip", "notebook.zip", "notebook-bundle.zip", "training.ipynb", "training-payload.zip"):
                 target = folder / name
                 if target.is_file() and not target.is_symlink() and target.resolve().is_relative_to(self.jobs_root.resolve()):
                     removed += target.stat().st_size
                     target.unlink()
-        return {"removed_bytes": removed, "message":"Disposable download files removed. Models and recovery state were retained."}
+            for name in ("features.pt", "manifest.json"):
+                target = folder / "feature-cache" / name
+                _check_path(target)
+                if target.is_file():
+                    removed += target.stat().st_size
+                    target.unlink()
+        return {"removed_bytes": removed, "message":"Disposable downloads and optional feature caches removed. Models and recovery state were retained."}
 
     def archive(self, jid, archived=True):
         with self.lock:
@@ -1334,7 +1457,10 @@ class Service:
             config = self.connections().get(pid, {}).get("config", {})
             build = {"bundle": connectors.build_bundle, "notebook": connectors.build_notebook,
                      "payload": connectors.build_notebook_payload}[kind]
+            started = time.monotonic()
             result = build(pid, config, path / "spec.json", path)
+            self._controller_cost(job, "staging", started)
+            self.save_job(job)
             if kind == "notebook":
                 job["notebook_preparation"] = {"prepared_at": now(),
                     "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest() if checkpoint.exists() else None}

@@ -1,4 +1,22 @@
-# MultiGPU 0.4.4 validation
+# MultiGPU 0.5.0 validation
+
+Verified on **25 October 2026** in isolated local workspaces. This release adds measured worker/controller costs, sampled metric events with exact internal progress, incremental event ingestion, lightweight runtime polling, tensorized tabular batches, optional image prefetch/frozen features, verified local preparation reuse and acceptance-based resource recommendations. FP32 defaults, training targets, provider eligibility and research-only boundaries remain intact.
+
+| Fresh check | Result | Evidence |
+|---|---|---|
+| Full Python regression | **261 passed, no skips** | [Log](.test-runs/v050-python-tests.log) |
+| Performance and recovery contracts | Exact original tabular sampler/model equality; exact resume within mode; image prefetch equivalence; feature-cache evaluation tolerance and exact resume; corruption, low RAM/disk, interrupted extraction, optional metadata failure, partial/truncated/replaced events, unchanged observations, unavailable CUDA and device-index compatibility passed | tests/test_performance.py and full suite |
+| Real Chrome journeys | Performance, provider observations/tools, journey, smoke, contract, setup, notebook delivery, recovery and research passed. Performance/smoke/delivery reran against the restarted final backend. No horizontal overflow at 1440/390; expanded ledger survives polling; accepting a recommendation re-previews without launching | [Performance proof](.test-runs/browser-performance/proof.json), [final performance](.test-runs/v050-browser-performance-final.log), [final local training](.test-runs/v050-browser-smoke-final.log), [final notebook delivery](.test-runs/v050-browser-delivery-final.log) |
+| CPU performance comparison | Alternating pre-change/new runs on identical settings; default sampler/target preserved; explicit optional image variants measured including extraction/export | [Method and results](docs/PERFORMANCE.md), [paired tabular results](.test-runs/performance-paired/comparison.json), [paired image results](.test-runs/performance-image-paired/comparison.json) |
+| Final packaged runtime | Bundled Python 3.12.15, system Python excluded; real CPU train/export and persisted restart; worker performance, lightweight runtime and omitted unchanged histories; 142 research records / 13 reports / CSV passed | [Final payload acceptance](<build/smoke install d4ab4a5bd91b479a9d64f1310efc9383/acceptance-result.json>) |
+| Windows native host | Download/clipboard/notebook handoff, origin/navigation rules, external routing, hide/restore, WebView/controller failure and recovery, second-launch activation and shutdown passed. Accepted native binaries are byte-identical to the final payload; the final metadata guard is covered by unit and final payload tests | [Native acceptance](<build/native acceptance 6653b78569474c74a3f6b145eb1fcee5/native reports/native-acceptance-result.json>) |
+| Final artifact/source integrity | **3,479 manifest files** verified, no unlisted files; packaged sources/research/performance guide match; installer/checksum/manifest agree | [Source audit](.test-runs/v050-source-audit.json) |
+
+Installer: [MultiGPU-0.5.0-Setup.exe](dist/MultiGPU-0.5.0-Setup.exe), **31,660,599 bytes**. SHA-256: `6d1b174b48bcf4d8e7cef4a7a748ec4c7dbe20adb0c3fe82035ef1ac02463bce`. Payload manifest SHA-256: `05250a38f250873da04a504d3083ef5a2cfb68571b8a712021e2aca2cc6b0d5f`.
+
+No provider accounts or paid compute were used. The installed app and user workspace were preserved. Fresh tests used CPU-only PyTorch: CUDA/ROCm/TPU/Gaudi speedups, live cloud transfer/startup/billing, clean-machine WebView2 installation, real upgrade/uninstall replay and installer signing remain unqualified. GPU utilization/network bytes remain unknown where unmeasured. Image acceleration remains opt-in, and SDK stages with unknown overlap do not become additive ETAs. Retained GPU results below are historical qualification, not fresh performance claims.
+
+## Retained 0.4.4 qualification
 
 Verified on **25 October 2026**. The Windows build adds 142 research entries alongside the 14 existing resources, with cost/access filters, pagination, provider evidence and an offline reader for 13 reports. Research-only entries remain outside provider authentication and training selection. Source research dates remain 24 October 2026; this release does not establish live provider entitlements.
 

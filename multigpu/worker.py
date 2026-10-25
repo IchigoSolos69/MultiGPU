@@ -17,6 +17,7 @@ from .artifacts import atomic_json, canonical_json, directory, decode_checkpoint
 from .datasets import prepare_spec, load_dataset, fingerprint_for_spec
 from . import recipes
 from .notebook_runtime import RecoveryPersistenceError, mirror_checkpoint
+from .performance import Performance
 
 
 def _file_lock(handle, unlock=False):
@@ -96,12 +97,29 @@ class TrainingContext:
         self._state_factory = None
         self._checkpoint_step = None
         self._fingerprint = ""
+        self.performance = Performance(self.spec)
+        self.performance.start_step = self.step
+        self._torch_runtime = None
+        self._last_metric = None
+        self._checkpoint_reserve = 0.0
         self.checkpoint_path = self.export_path = None
         self.evaluation = None
         self.phase = "validating_inputs"
         self._writer = threading.RLock()
         self._stop_telemetry = threading.Event()
         self._telemetry = None
+
+    @property
+    def phase(self):
+        return self._phase
+
+    @phase.setter
+    def phase(self, value):
+        self._phase = value
+        self.performance.transition({"validating_inputs": "data_loading", "evaluating": "evaluation", "exporting": "export"}.get(value, value))
+
+    def performance_observation(self):
+        return self.performance.snapshot(self.step, self.device, self._torch_runtime)
 
     @property
     def elapsed_seconds(self):
@@ -142,7 +160,7 @@ class TrainingContext:
             required_action = "Waiting for a checkpoint and stop acknowledgment"
         if required_action is None and self.phase == "training" and now - self._last_progress >= 300:
             required_action = "Review worker logs: no training step was reported in five minutes"
-        self.emit("summary", summary_kind="terminal" if terminal_status else "periodic", worker_status=terminal_status,
+        self.emit("summary", performance=self.performance_observation(), summary_kind="terminal" if terminal_status else "periodic", worker_status=terminal_status,
                   checkpoint_step=self._checkpoint_step,
                   checkpoint_age_seconds=round(now - self._last_checkpoint, 3) if self._checkpoint_step is not None else None,
                   remaining_session_seconds=round(max(0, self.spec["runtime_seconds"] - (now - self._started)), 3),
@@ -180,12 +198,16 @@ class TrainingContext:
                 self.device = str(metrics.pop("device"))
             self.step, self.loss = next_step, float(loss)
             self._last_progress = time.monotonic()
-            self.emit("metric", metrics=metrics)
+            current = time.monotonic()
+            if self._last_metric is None or current - self._last_metric >= 1:
+                self.emit("metric", metrics=metrics, sampled=True, metric_interval_seconds=1)
+                self._last_metric = current
             self._tick()
 
     def should_stop(self):
         runtime = self.spec["runtime_seconds"]
-        return (self.output_dir / "STOP").exists() or time.monotonic() - self._started >= runtime - min(5.0, runtime * .05)
+        reserve = max(min(5.0, runtime * .05), self._checkpoint_reserve * 2 + self.spec.get("delivery_reserve_seconds", 0))
+        return (self.output_dir / "STOP").exists() or time.monotonic() - self._started >= runtime - reserve
 
     def checkpoint(self, state: dict) -> Path:
         if not isinstance(state, dict):
@@ -195,12 +217,16 @@ class TrainingContext:
                         "fingerprint": self._fingerprint, "step": self.step, "total_steps": self.spec["steps"],
                         "loss": self.loss, "elapsed_seconds": self.elapsed_seconds, "device": self.device, "payload": state,
                         "saved_at": datetime.now(timezone.utc).isoformat()}
-            self.checkpoint_path = write_checkpoint(self.output_dir, envelope)
+            started = time.monotonic()
+            with self.performance.measure("checkpointing"):
+                self.checkpoint_path = write_checkpoint(self.output_dir, envelope)
+                if self.spec.get("recovery_dir"):
+                    mirror_checkpoint(self.output_dir, self.spec)
+            self._checkpoint_reserve = max(self._checkpoint_reserve, time.monotonic() - started)
+            self.performance.checkpoints += 1
             self._checkpoint_step = self.step
             self._last_checkpoint = time.monotonic()
             self.emit("checkpoint", checkpoint_path=str(self.checkpoint_path))
-            if self.spec.get("recovery_dir"):
-                mirror_checkpoint(self.output_dir, self.spec)
             return self.checkpoint_path
 
     def maybe_checkpoint(self):
@@ -231,8 +257,10 @@ def run(spec: dict, output_dir: Path) -> dict:
             if validated.get("resume_sha256") and hashlib.sha256(resume_bytes).hexdigest() != validated["resume_sha256"]:
                 raise ValueError("The reviewed checkpoint changed; preview recovery again")
             resumed = decode_checkpoint(resume_bytes)
+        worker_ready_at = datetime.now(timezone.utc).isoformat()
         ctx = TrainingContext(validated, output_dir, resumed)
         ctx.start_telemetry()
+        ctx.emit("started", timestamp=worker_ready_at)
         if validated["recipe"] == "image" and resumed and not Path(validated.get("weights_path") or "").is_file():
             asset = Path(validated["resume_from"]).parent / "assets" / "base_weights.pth"
             if asset.is_file():
@@ -288,6 +316,11 @@ def run(spec: dict, output_dir: Path) -> dict:
                   "checkpoint_path": str(ctx.checkpoint_path) if ctx.checkpoint_path else None,
                   "export_path": str(ctx.export_path) if ctx.export_path else None}
         ctx.close()
+        result["performance"] = ctx.performance_observation()
+        try:
+            atomic_json(ctx.output_dir / "performance.json", result["performance"])
+        except OSError:
+            result["performance"]["persistence_warning"] = "Performance sidecar could not be saved; model verification remains separate."
         ctx.summary(status)
         ctx.emit(status, **result)
         return result
@@ -302,6 +335,7 @@ def run(spec: dict, output_dir: Path) -> dict:
             result["required_action"] = "Recovery storage could not be verified. Save the runtime-local checkpoint or repair the selected recovery folder before continuing."
         if ctx:
             ctx.close()
+            result["performance"] = ctx.performance_observation()
             try:
                 if recovery_failed:
                     ctx.emit("recovery_warning", detail=str(exc), checkpoint_path=result["checkpoint_path"])

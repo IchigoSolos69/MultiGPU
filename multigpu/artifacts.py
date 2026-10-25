@@ -174,6 +174,7 @@ def validate_checkpoint_payload(state: dict, spec: dict | None = None, dataset: 
         shapes, momentum = [(16, count), (16,), (1, 16), (1,)], 0
     else:
         head = payload.get("head", {})
+        require(payload.get("image_feature_cache", False) == spec.get("image_feature_cache", False), "feature-cache training mode differs from the run")
         classes = len(metadata.get("classes", [])) or (len(head.get("bias", [])) if isinstance(head, dict) else 0)
         require(version == 2 and 2 <= classes <= 50_000 and isinstance(head, dict) and set(head) == {"weight", "bias"}
                 and matrix(head["weight"], classes, 512) and vector(head["bias"], classes), "image head dimensions are invalid")

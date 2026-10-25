@@ -25,6 +25,8 @@ def prepare_spec(spec: dict) -> dict:
               "heartbeat_interval_seconds": 30, **spec}
     if image:
         result = {"architecture": "resnet18", "epochs": 5, "momentum": 0.9, "image_size": 224, **result}
+    if type(result.get("image_feature_cache", False)) is not bool or result.get("image_loader", "sync") not in {"sync", "prefetch"}:
+        raise ValueError("Invalid image acceleration settings")
     if result["recipe"] not in ("starter", "pytorch", "image", "custom"):
         raise ValueError("Choose starter, pytorch, image, or custom recipe")
     if result["recipe_version"] not in (1, 2) or (image and result["recipe_version"] != 2):
@@ -298,6 +300,8 @@ def fingerprint(spec: dict, content_hash: str, metadata: dict | None = None) -> 
     if spec["recipe"] == "image":
         config.update(steps=(metadata or {})["total_steps"], architecture="resnet18", epochs=spec["epochs"],
                       momentum=spec["momentum"], image_size=224, weights_identity=RESNET18_ID)
+        if spec.get("image_feature_cache"):
+            config["image_feature_cache"] = True
     return hashlib.sha256(canonical_json({"config": config, "data": content_hash})).hexdigest()
 
 

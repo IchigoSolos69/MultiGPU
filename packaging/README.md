@@ -1,5 +1,7 @@
 Build on Windows x64 with PowerShell:
 
+Version 0.5.0 adds the performance measurement, explicit local benchmark, image pipeline and prepared-asset cache modules to the payload allowlist, together with `docs/PERFORMANCE.md`. Image acceleration remains opt-in; the packaged CPU starter requires no Torch installation. Qualification evidence is recorded in `VALIDATION.md`.
+
 ```powershell
 ./packaging/prepare-compiler.ps1
 ./packaging/build-windows.ps1

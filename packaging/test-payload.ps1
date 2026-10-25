@@ -78,6 +78,11 @@ try {
         $job=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/'+$job.id) -TimeoutSec 5
     } until (($job.status -eq 'completed' -and $job.export_path) -or $job.status -eq 'error' -or $job.export_error -or [DateTime]::UtcNow -gt $deadline)
     if ($job.status -ne 'completed' -or !$job.export_path -or !(Test-Path -LiteralPath (Join-Path $job.export_path 'manifest.json'))) { throw ('Bundled training/export failed: '+(@{id=$job.id;status=$job.status;phase=$job.phase;message=$job.message;export_error=$job.export_error} | ConvertTo-Json)) }
+    if ($job.performance.source -ne 'worker' -or $job.performance.completed_steps -ne 12 -or $job.performance.memory.gpu_peak_allocated_bytes -ne $null) { throw 'Bundled performance observations are missing or mislabel unavailable GPU memory.' }
+    $snapshot=Invoke-RestMethod -Uri ($connection.url+'/api/runtime') -TimeoutSec 5
+    if ($snapshot.PSObject.Properties.Name -contains 'research_providers' -or $snapshot.PSObject.Properties.Name -contains 'providers') { throw 'Runtime polling repeated the static provider catalog.' }
+    $unchanged=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/'+$job.id+'?observations_revision='+$job.observations_revision) -TimeoutSec 5
+    if (!$unchanged.observations_unchanged -or $unchanged.PSObject.Properties.Name -contains 'metrics') { throw 'Unchanged observations were retransmitted.' }
     $verified=& $runtime.Python -c "import sys; from pathlib import Path; from multigpu.artifacts import verify_export; print(len(verify_export(Path(sys.argv[1]))['files']))" $job.export_path
     if ($LASTEXITCODE -or [int]$verified -lt 1) { throw 'The bundled model export did not pass integrity verification.' }
     Stop-TestController
@@ -85,7 +90,7 @@ try {
     $restored=Invoke-RestMethod -Uri ($connection.url+'/api/jobs/'+$job.id) -TimeoutSec 5
     if ($restored.status -ne 'completed' -or $restored.export_path -ne $job.export_path) { throw 'The bundled controller did not restore its completed run after restart.' }
     Stop-TestController
-    $result=@{passed=$true;python=$identity;app=$app;workspace=$workspace;job_id=$job.id;export_path=$job.export_path;restart_restored=$true;provider_jobs_launched=$false;research_entries=142;research_documents=$researchDocuments;research_csv_entries=142;research_local_api_read=$true;research_execution_disabled=$true}
+    $result=@{passed=$true;python=$identity;app=$app;workspace=$workspace;job_id=$job.id;export_path=$job.export_path;restart_restored=$true;provider_jobs_launched=$false;research_entries=142;research_documents=$researchDocuments;research_csv_entries=142;research_local_api_read=$true;research_execution_disabled=$true;performance_observations=$true;lightweight_runtime=$true;unchanged_history_omitted=$true}
     $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $TestRoot 'acceptance-result.json') -Encoding UTF8
     Write-Output ($result | ConvertTo-Json -Depth 5)
 } finally {

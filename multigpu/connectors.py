@@ -376,7 +376,7 @@ def _stage(spec_path, job_dir):
     stage = Path(tempfile.mkdtemp(prefix="payload-", dir=job_dir))
     (stage / "multigpu").mkdir(parents=True, exist_ok=True)
     (stage / "multigpu" / "__init__.py").write_text("", encoding="utf-8")
-    for filename in ("worker.py", "artifacts.py", "datasets.py", "recipes.py", "prediction.py", "notebook_runtime.py"):
+    for filename in ("worker.py", "artifacts.py", "datasets.py", "recipes.py", "prediction.py", "notebook_runtime.py", "performance.py", "image_pipeline.py", "staging.py"):
         source = Path(__file__).parent / filename
         if not source.is_file() and filename in {"worker.py", "artifacts.py"}:
             raise ConnectorError(f"The application worker is incomplete: {filename} is missing.")
@@ -644,6 +644,11 @@ def build_notebook(provider_id, config, spec_path, job_dir):
     """Return the actual runnable notebook; setup instructions remain in the app."""
     _require_notebook_provider(provider_id)
     _check_config(config)
+    from .staging import asset_key, reusable, remember
+    key = asset_key(provider_id, spec_path)
+    target = Path(job_dir) / "training.ipynb"
+    if reusable(target, key):
+        return target
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     separate = needs_payload(original, Path(spec_path).parent)
     stage, spec = _stage_for_provider(provider_id, spec_path, job_dir)
@@ -659,6 +664,9 @@ def build_notebook(provider_id, config, spec_path, job_dir):
         atomic_json(target, _notebook_document(source, spec, separate))
         if target.stat().st_size >= 8 * 1024 * 1024:
             raise ConnectorError("This notebook exceeds the safe import size. Reduce selected inputs before preparing it again.")
+        if asset_key(provider_id, spec_path) != key:
+            raise ConnectorError("Inputs changed during preparation. Preview training again.")
+        remember(target, key)
         return target
     finally:
         _remove_notebook_stage(stage, job_dir)
@@ -671,6 +679,11 @@ def build_notebook_payload(provider_id, config, spec_path, job_dir):
     original = json.loads(Path(spec_path).read_text(encoding="utf-8"))
     if not needs_payload(original, Path(spec_path).parent):
         raise ConnectorError("This small job's notebook already includes its training inputs; no separate payload is needed.")
+    from .staging import asset_key, reusable, remember
+    key = asset_key(provider_id, spec_path)
+    target = Path(job_dir) / "training-payload.zip"
+    if reusable(target, key):
+        return target
     stage, _ = _stage_for_provider(provider_id, spec_path, job_dir)
     target = Path(job_dir) / "training-payload.zip"
     temporary = target.with_suffix(".zip.tmp")
@@ -681,6 +694,9 @@ def build_notebook_payload(provider_id, config, spec_path, job_dir):
             for file, relative in _payload_files(stage):
                 archive.write(file, relative)
         os.replace(temporary, target)
+        if asset_key(provider_id, spec_path) != key:
+            raise ConnectorError("Inputs changed during preparation. Preview training again.")
+        remember(target, key)
     finally:
         temporary.unlink(missing_ok=True)
         _remove_notebook_stage(stage, job_dir)
@@ -692,22 +708,26 @@ def build_bundle(provider_id, config, spec_path, job_dir):
     _require_notebook_provider(provider_id)
     _check_config(config)
     stage, spec = _stage_for_provider(provider_id, spec_path, job_dir)
-    source = _embedded(stage, notebook=True)
-    notebook = _notebook_document(source, spec, False)
-    (stage / "training.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
-    (stage / "README.md").write_text(
-        "Extract training.ipynb from this ZIP, upload it, and run its cell.\n"
-        "The notebook embeds worker.py, artifacts.py, spec.json and selected input files exactly once.\n"
-        "Choose compute and configure billing directly with your provider.\n"
-        "This bundle does not keep runtimes alive or connect them to a distributed cluster.\n"
-        "Use the scoped output folder printed by the worker; its STOP file requests a graceful pause.\n"
-        "Custom recipes need their dependencies installed and must be standalone Python scripts.\n"
-        "Outputs remain with the provider until you download/import them.\n", encoding="utf-8")
-    target = Path(job_dir) / "notebook-bundle.zip"
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.write(stage / "training.ipynb", "training.ipynb")
-        archive.write(stage / "README.md", "README.md")
-    return target
+    try:
+        source = _embedded(stage, notebook=True)
+        notebook = _notebook_document(source, spec, False)
+        (stage / "training.ipynb").write_text(json.dumps(notebook), encoding="utf-8")
+        (stage / "README.md").write_text(
+            "Extract training.ipynb from this ZIP, upload it, and run its cell.\n"
+            "The notebook embeds worker.py, artifacts.py, spec.json and selected input files exactly once.\n"
+            "Choose compute and configure billing directly with your provider.\n"
+            "This bundle does not keep runtimes alive or connect them to a distributed cluster.\n"
+            "Use the scoped output folder printed by the worker; its STOP file requests a graceful pause.\n"
+            "Custom recipes need their dependencies installed and must be standalone Python scripts.\n"
+            "Outputs remain with the provider until you download/import them.\n", encoding="utf-8")
+        target = Path(job_dir) / "notebook-bundle.zip"
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.write(stage / "training.ipynb", "training.ipynb")
+            archive.write(stage / "README.md", "README.md")
+        return target
+
+    finally:
+        _remove_notebook_stage(stage, job_dir)
 
 
 def _modal_resource(spec):

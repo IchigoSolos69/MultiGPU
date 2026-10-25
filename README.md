@@ -2,7 +2,7 @@
 
 MultiGPU is a local application for training models with **your own computer and your own provider accounts**, then saving verified models on your computer. It provides a Windows desktop window, in-app provider setup, a training wizard, progress monitoring, checkpoint recovery and model export.
 
-**Application version: 0.4.4. Official-source provider research checked: 24 October 2026.**
+**Application version: 0.5.0. Official-source provider research checked: 24 October 2026.**
 
 The goal is to make eligible free compute easier to use without changing the user's training target or silently enabling paid resources. The current implementation trains each attempt on **one resource at a time**. Ordered fallbacks and compatible checkpoints support continuation; synchronous cross-provider training and pooled GPU memory are future work.
 
@@ -20,6 +20,7 @@ The goal is to make eligible free compute easier to use without changing the use
 - [Dependencies and provider setup](#dependencies-and-provider-setup)
 - [Spending and fallback rules](#spending-and-fallback-rules)
 - [Progress and recovery](#progress-and-recovery)
+- [Training efficiency and performance](#training-efficiency-and-performance)
 - [Model export and prediction](#model-export-and-prediction)
 - [Custom training scripts](#custom-training-scripts)
 - [Architecture and storage](#architecture-and-storage)
@@ -54,7 +55,7 @@ MultiGPU is intended for individual learners and model trainers who want to run 
 
 | Area | Current scope |
 |---|---|
-| Release | 0.4.4; release checks recorded on 25 October 2026 |
+| Release | 0.5.0; performance work and validation recorded on 25 October 2026 |
 | Packaged platform | Windows 10/11 x64, per-user desktop installation |
 | Core runtime | Python 3.11+; bundled Windows Python 3.12.15 |
 | Interface | Local browser dashboard or native Windows WebView2 window |
@@ -166,7 +167,7 @@ Before promoting a candidate into training selection, implement its adapter and 
 
 ### Windows release
 
-The packaged application targets **Windows 10/11 x64**. Install the release and open **MultiGPU** from the Start menu. A local build is `dist/MultiGPU-0.4.4-Setup.exe`; `dist/release-info.json` and release acceptance evidence identify its hashes and checks when these artifacts are present.
+The packaged application targets **Windows 10/11 x64**. Install the release and open **MultiGPU** from the Start menu. A local build is `dist/MultiGPU-0.5.0-Setup.exe`; `dist/release-info.json` and release acceptance evidence identify its hashes and checks when these artifacts are present.
 
 The installer includes CPython, uv, the launcher and native host components. A system Python is not required. Optional training/provider libraries are prepared later, on request, in the app's environment.
 
@@ -310,7 +311,7 @@ Official base weights are downloaded during explicit preparation and checked aga
 
 Use the app's preparation buttons so packages reach the controller's actual interpreter. Profiles are `cpu`, `image`, `cuda`, `kaggle`, `modal` and `lightning`. Image preparation is device-aware and includes verified base weights. Setup tasks/logs persist, support cancellation and require repair/rechecking after interruption.
 
-Version 0.4.4 preparation pins Torch 2.14.1, torchvision 0.29.1 and Pillow 12.3.0; CUDA uses `cu130` builds from the official index. See [environment.py](multigpu/environment.py) for exact package/index choices. Optional project extras also exist in [pyproject.toml](pyproject.toml).
+The preparation profiles pin Torch 2.14.1, torchvision 0.29.1 and Pillow 12.3.0; CUDA uses `cu130` builds from the official index. See [environment.py](multigpu/environment.py) for exact package/index choices. Optional project extras also exist in [pyproject.toml](pyproject.toml).
 
 Authentication stays in provider-native tools. Supported Windows sign-in buttons open their console/browser. The displayed commands target the app environment, not an unrelated terminal's Python. Connection forms store nonsecret settings, not pasted passwords/tokens.
 
@@ -358,6 +359,26 @@ Colab notebooks offer optional, **disabled-by-default** recovery to a Drive fold
 If launch acknowledgment is lost, the app preserves the submission identity and blocks blind retries. **Check provider state** reconciles it. **Resolve provider launch** can attach independently verified execution evidence or record the user's explicit console confirmation that an attempt stopped/was absent; user-confirmed evidence is labelled accordingly.
 
 An absent training process does not prove a Lightning Studio stopped. Kaggle immediate stopping remains a provider-console operation. Remote recovery artifacts remain until local verification; cleanup is user-controlled.
+
+## Training efficiency and performance
+
+Version 0.5 measures useful training through verified model delivery. Run details expose an expandable **Measured performance** ledger: stage durations, built-in training throughput, recovered progress, observed repeated work and available peak memory. Missing GPU utilization, network-transfer or provider-stage measurements remain unknown. SDK calls that combine upload/provisioning are labelled as combined observations.
+
+The default tabular PyTorch path reuses host tensors and preserves the original seeded sampler. Routine metrics are sampled at most once per second while exact internal progress and per-report finite-loss checks remain unchanged. Checkpoints and terminal events are immediate; charts include saved-checkpoint measurements. Incremental event ingestion and lightweight runtime polling reduce repeated parsing and transport.
+
+Image **Advanced training settings** offer bounded prefetch and a frozen-backbone feature cache, both opt-in. Prefetch uses two threads with bounded buffers. Feature caching avoids repeated ResNet backbone passes across epochs, validates dataset/model/runtime/precision identity, and retains the original head-training target. The cache choice is bound to checkpoints; it cannot silently change on resume. FP32, synchronous loading, batch size and training targets retain their defaults.
+
+Preview recommendations use compatible saved-run measurements, including observed overhead and dated allowance evidence. They never reorder selected resources automatically. **Use suggestion and preview again** requires a fresh preview and does not start training. Unknown timings stay unknown. Continuation advice can favour an eligible current resource when measured migration overhead exceeds estimated remaining training time.
+
+Prepared local notebooks/payloads are reused only after specification, input, worker-code and output hashes match. This creates no new remote storage. Measured checkpoint costs and compatible delivery history inform cooperative runtime reserves; they do not establish provider billing enforcement.
+
+See [performance details and measured results](docs/PERFORMANCE.md) for exact behavior, limits and reproducible commands:
+
+```powershell
+python -m multigpu.performance_benchmark --workspace .test-runs/performance --device cpu
+```
+
+The benchmark runs local fixtures only, never provisions providers, and never downloads pretrained weights implicitly. Recorded CPU results show faster tabular execution and a useful optional image-feature cache on small fixtures; these are not qualified CUDA or cloud speedups.
 
 ## Model export and prediction
 
@@ -443,6 +464,8 @@ Paths below are inside [multigpu/](multigpu/).
 | `research.py`, `data/provider-research.json` | Read-only discovery records, fixed report IDs, bundled documents and CSV |
 | `desktop.py` | Controlled native dialogs/sign-in/open-folder actions |
 | `benchmark.py` | Same-host two-GPU benchmark, not cross-provider qualification |
+| `performance.py`, `performance_benchmark.py` | Measured attempt costs, preview advice and explicit local recipe benchmarks |
+| `image_pipeline.py`, `staging.py` | Bounded image prefetch/features and verified prepared-asset reuse |
 | `static/` | Frontend presentation and interactions |
 
 [packaging/](packaging/) contains native window/launcher and installer tools; [tests/](tests/) contains backend/browser regressions; [docs/](docs/) contains the provider research; [examples/](examples/) contains custom integration code.
@@ -498,6 +521,7 @@ This is trusted local controller infrastructure, not a public/multi-tenant servi
 | Method | Route/group | Purpose |
 |---|---|---|
 | GET | `/api/bootstrap`, `/api/hardware`, `/api/jobs`, `/api/jobs/:id` | Workspace, hardware and run observations |
+| GET | `/api/runtime` | Mutable jobs, hardware, settings, connections and setup tasks without static research/catalog payloads |
 | GET | `/api/research/documents/:id` | Allowlisted bundled report, source date, Markdown content and SHA-256 |
 | GET | `/api/research/directory.csv` | Download the complete research comparison CSV |
 | GET/POST | `/api/draft`, `/api/providers/:id/setup`, `/api/jobs/:id/setup` | Draft/checklist progress |
@@ -520,6 +544,8 @@ This is trusted local controller infrastructure, not a public/multi-tenant servi
 Short action names share `/api/jobs/:id/`. Use `allowed_actions` from the current job; state and capabilities can forbid an operation. [server.py](multigpu/server.py) and [service.py](multigpu/service.py) define the complete routes/payload checks.
 
 Bootstrap keeps `providers` (14 original resource records), `research_providers` (142 discovery records) and `research_documents` (13 report descriptors) separate. A research record is not a valid new execution capability. Report endpoints accept fixed IDs, not filesystem paths; see [research.py](multigpu/research.py) for the ID mapping. JSON mutations accept object bodies up to 1 MiB. This API has no public compatibility/versioning guarantee for third-party clients.
+
+New job responses may include `performance`; previews may include `performance_recommendations`, and continuation previews may include `continuation_performance`. Image specifications accept `image_loader: "sync" | "prefetch"` and `image_feature_cache: boolean`, with acceleration off by default. `GET /api/jobs/:id?observations_revision=<previous revision>` omits unchanged metrics/events/logs and returns `observations_unchanged: true`; clients must retain their previous observations. The original GET without a revision remains compatible.
 
 Example for an intentionally isolated local controller:
 
@@ -566,7 +592,7 @@ Use disposable workspaces, not installed user data. Python 3.11+ runs the core; 
 python -m unittest discover -s tests -p 'test_*.py' -q
 ```
 
-Version 0.4.4 recorded **238 passing tests, no skips**, in its prepared environment on 25 October 2026. Fresh environments can skip optional-library/platform-specific cases. See [VALIDATION.md](VALIDATION.md) for evidence and conditions; this README update does not represent a fresh execution of those release checks.
+Version 0.5.0 regression evidence, prepared-environment conditions and exact test counts are recorded in [VALIDATION.md](VALIDATION.md). Fresh environments can skip optional-library/platform-specific cases. Provider fixtures and local performance measurements do not qualify live cloud billing or new GPU hardware.
 
 Browser tests require Node, Playwright and Chrome. Use an isolated loopback controller on an unused port other than 8765, with a workspace **inside `.test-runs/`**; delivery/recovery tests reject other workspace locations. Start it in a separate terminal:
 
@@ -588,6 +614,7 @@ node tests/browser-recovery.cjs
 node tests/browser-provider-tools.cjs
 node tests/browser-provider-observations.cjs
 node tests/browser-research.cjs
+node tests/browser-performance.cjs
 ```
 
 For a focused check of directory consistency, disabled research capabilities, document access and API boundaries:
@@ -606,7 +633,7 @@ See [packaging/README.md](packaging/README.md) for prerequisites and acceptance 
 
 ```powershell
 .\packaging\prepare-compiler.ps1
-.\packaging\build-windows.ps1 -Version 0.4.4
+.\packaging\build-windows.ps1 -Version 0.5.0
 .\packaging\test-payload.ps1
 .\packaging\test-native-helpers.ps1
 .\packaging\test-native.ps1
@@ -647,6 +674,8 @@ No project-level `LICENSE` file is currently included. Third-party notices remai
 ## Validation and next work
 
 [VALIDATION.md](VALIDATION.md) records exact releases, hashes and checks. Version 0.4.4 passed 238 Python tests and browser checks for research browsing, cost filters, safe report rendering, mobile layouts, existing setup and local training/export. Windows payload checks cover the bundled research, CPU training/export and restart. Retained 0.4.2 evidence includes real RTX 5050 Laptop CUDA tabular/image training, exact resume, export and standalone prediction.
+
+Version 0.5.0 adds measured stages, sampled telemetry, incremental ingestion, lightweight polling, tensorized tabular batches, optional image acceleration and explicit performance recommendations. Current CPU measurements and their limits are documented in [docs/PERFORMANCE.md](docs/PERFORMANCE.md). No fresh CUDA or live-provider speedup is inferred from them.
 
 Local and fixture tests do not certify live provider lifecycle/billing, real Colab/Drive persistence after VM deletion, every GPU/driver or clean Windows first-install behavior. The 0.4.4 Windows build includes the expanded directory and offline research; the additional entries remain outside executable training resources until their connectors are implemented and qualified.
 

@@ -21,6 +21,7 @@ const path=require('node:path');
   const request=route.request(),url=new URL(request.url()),api=url.pathname,body=request.method()==='POST'?request.postDataJSON():null;
   const send=(value,status=200)=>route.fulfill({status,json:value,headers:{'X-MultiGPU-Token':'fixture-token'}});
   if(api==='/api/bootstrap'){bootReads++;return bootReads===1?send({error:'Fixture controller offline'},503):send(bootstrap());}
+  if(api==='/api/runtime'){const b=bootstrap();return send({jobs:b.jobs,environment_tasks:b.environment_tasks,connections:Object.fromEntries(b.providers.map(p=>[p.id,p.connection]))});}
   if(api==='/api/draft'){if(body)draft=body.draft;else draftReads++;return send({draft});}
   if(api==='/api/environment/tasks')return send({tasks:[task]});
   if(api==='/api/environment/tasks/'+task.id+'/cancel'){cancelled++;task={...task,status:'cancelled',cancellable:false};return send(task);}

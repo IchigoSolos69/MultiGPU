@@ -10,7 +10,7 @@ const assert=require('node:assert/strict');
  job={...job,status:'awaiting_user',step:80,total_steps:100,execution_mode:'guided',provider_id:'colab',spec:{...job.spec,providers:['colab'],guided:true},allowed_actions:['import','bundle','predict','export','archive'],artifacts:[{path:'model.json',size_bytes:2048,sha256:'fixture'}],export_verified_at:new Date().toISOString(),last_summary:{remaining_session_seconds:90,checkpoint_age_seconds:null,active_gpu_count:0,allowance_confidence:'Unknown',required_action:'Import downloaded notebook results.'}};
  const browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{
-  await page.route('**/api/jobs/'+actual.id,route=>route.fulfill({json:job}));
+  await page.route(url=>url.pathname==='/api/jobs/'+actual.id,route=>route.fulfill({json:job}));
   await page.route('**/api/jobs/'+actual.id+'/predict',route=>route.fulfill({json:{prediction:0,classes:[0,1],probability:.9,probabilities:[.1,.9]}}));
   await page.route('**/api/jobs/'+actual.id+'/import',route=>{const body=route.request().postDataJSON();if(body.preview)return route.fulfill({json:{preview_digest:'fixture',step:40,current_step:80,rollback_required:true,verified:true,status:'paused'}});committed=body;job={...job,status:'paused',step:40};return route.fulfill({json:job});});
   await page.route('**/api/cache/cleanup',route=>{cleaned=true;return route.fulfill({json:{message:'Fixture cache clean completed.'}});});

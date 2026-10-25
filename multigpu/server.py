@@ -21,7 +21,7 @@ def make_server(service, port=8765):
     static = Path(__file__).parent / "static"
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "MultiGPU/0.4"
+        server_version = "MultiGPU/0.5"
 
         def log_message(self, format, *args):
             pass
@@ -59,6 +59,8 @@ def make_server(service, port=8765):
                 parts = url.path.strip("/").split("/")
                 if url.path == "/api/bootstrap":
                     return self.send(200, service.bootstrap(), extra={"X-MultiGPU-Token": token})
+                if url.path == "/api/runtime":
+                    return self.send(200, service.runtime_snapshot(), extra={"X-MultiGPU-Token": token})
                 if len(parts) == 4 and parts[:3] == ["api", "research", "documents"]:
                     from .research import research_document
                     return self.send(200, research_document(parts[3]))
@@ -84,8 +86,10 @@ def make_server(service, port=8765):
                 if len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
                     jid = parts[2]
                     if len(parts) == 3:
-                        job = service.job(jid, True)
-                        job["logs"] = service.logs(jid)
+                        revision = parse_qs(url.query).get("observations_revision", [None])[0]
+                        job = service.job(jid, True, revision)
+                        if not job.get("observations_unchanged"):
+                            job["logs"] = service.logs(jid)
                         return self.send(200, job)
                     if len(parts) == 4 and parts[3] == "setup":
                         return self.send(200, service.job_setup(jid))

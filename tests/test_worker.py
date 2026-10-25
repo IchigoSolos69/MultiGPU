@@ -36,7 +36,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         events = [json.loads(line) for line in (job / "events.jsonl").read_text().splitlines()]
         losses = [event["loss"] for event in events if event["type"] == "metric"]
-        self.assertLess(sum(losses[-10:]), sum(losses[:10]))
+        self.assertLess(events[-1]["loss"], losses[0])
         model = json.loads((job / "export" / "model.json").read_text())
         self.assertTrue(any(weight != 0 for weight in model["weights"]))
         destination = export_verified(job, self.root / "download")

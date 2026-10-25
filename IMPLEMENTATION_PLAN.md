@@ -178,3 +178,8 @@ or real-provider billing qualification.
   inside the app. Preserve validated checkpoint continuation.
 - Verify persisted guides, stale responses, false readiness prevention, notebook
   delivery, dedicated-window startup, downloads and installer behavior.
+## Version 0.5 — useful training per allowance
+
+Implemented measured worker/controller stages, optional performance observations, per-second metric sampling with exact internal progress, incremental event cursors, lightweight runtime snapshots and unchanged-history suppression. Tabular PyTorch batches reuse host tensors with the original sampler. Image prefetch and verified frozen-backbone feature caching remain opt-in, with mode-bound recovery and bounded buffers/cache files. Prepared local training files are reused only after input/code/output verification; no new remote storage is created.
+
+Preview recommendations use comparable verified historical runs and require acceptance plus another preview. Continuation advice preserves the reviewed choice, and measured checkpoint/delivery costs inform cooperative runtime reserves. CPU baseline/variant measurements and unavailable CUDA/cloud observations are documented in docs/PERFORMANCE.md. Mixed precision, compilation, automatic batch changes, provider entitlement expansion and cross-provider distributed execution remain deferred. Validation evidence is in VALIDATION.md.

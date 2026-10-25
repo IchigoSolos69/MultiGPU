@@ -38,6 +38,9 @@ def _torch(ctx):
     else:
         ctx.device = "cpu"
     torch.manual_seed(ctx.spec["seed"])
+    ctx._torch_runtime = torch
+    if use_cuda:
+        torch.cuda.reset_peak_memory_stats(ctx.device)
     return torch
 
 
@@ -102,6 +105,7 @@ def train_starter(ctx, data):
         weights = [weight - scale * value for weight, value in zip(weights, gradient)]
         bias -= scale * bias_gradient
         ctx.report(loss / ctx.spec["batch_size"])
+        ctx.performance.samples += ctx.spec["batch_size"]
         ctx.maybe_checkpoint()
     ctx.checkpoint(state())
     if ctx.step == ctx.spec["steps"]:
@@ -109,8 +113,12 @@ def train_starter(ctx, data):
 
 
 def train_pytorch(ctx, data):
+    ctx.phase = "preparation"
     torch = _torch(ctx)
     x, y, train = data["features"], data["labels"], data["train_indices"]
+    # Keep the same Python sampler; construct host tensors only once.
+    host_features = torch.tensor(x, dtype=torch.float32)
+    host_labels = torch.tensor(y, dtype=torch.float32)
     rng = random.Random(ctx.spec["seed"])
     model = torch.nn.Sequential(torch.nn.Linear(len(x[0]), 16), torch.nn.Tanh(), torch.nn.Linear(16, 1)).to(ctx.device)
     optimizer = torch.optim.SGD(model.parameters(), lr=ctx.spec["learning_rate"])
@@ -135,15 +143,17 @@ def train_pytorch(ctx, data):
     ctx._state_factory = state
     ctx.checkpoint(state())
     # Keep the dataset in host memory; only the current minibatch uses GPU memory.
+    ctx.phase = "training"
     while ctx.step < ctx.spec["steps"] and not ctx.should_stop():
         indices = [train[rng.randrange(len(train))] for _ in range(ctx.spec["batch_size"])]
-        features = torch.tensor([x[i] for i in indices], dtype=torch.float32, device=ctx.device)
-        labels = torch.tensor([y[i] for i in indices], dtype=torch.float32, device=ctx.device)
+        features = host_features[indices].to(ctx.device)
+        labels = host_labels[indices].to(ctx.device)
         optimizer.zero_grad(set_to_none=True)
         loss = torch.nn.functional.binary_cross_entropy_with_logits(model(features).squeeze(-1), labels)
         loss.backward()
         optimizer.step()
         ctx.report(loss.detach().item())
+        ctx.performance.samples += len(indices)
         ctx.maybe_checkpoint()
     ctx.checkpoint(state())
     if ctx.step == ctx.spec["steps"]:
@@ -195,6 +205,7 @@ def prepare_image_weights(cache_dir: Path, allow_download=False, cancelled=None)
 
 
 def train_image(ctx, data):
+    ctx.phase = "preparation"
     torch = _torch(ctx)
     try:
         from PIL import Image
@@ -206,6 +217,10 @@ def train_image(ctx, data):
         raise ValueError(info.get("error", "Prepare official ResNet18 weights first"))
     digest = info["sha256"]
     saved = ctx.resume_state
+    if saved:
+        from .artifacts import validate_checkpoint_payload
+        validate_checkpoint_payload({"step": ctx.step, "total_steps": ctx.spec["steps"], "recipe": "image", "recipe_version": 2,
+                                     "payload": saved}, ctx.spec, data)
     if saved and saved.get("weights_sha256") != digest:
         raise ValueError("Resume requires the exact same verified pretrained base weights")
     asset = ctx.output_dir / "assets" / "base_weights.pth"
@@ -232,59 +247,77 @@ def train_image(ctx, data):
         if ctx.gpu_index is not None and saved.get("cuda_rng"):
             torch.cuda.set_rng_state(torch.tensor(saved["cuda_rng"], dtype=torch.uint8), device=ctx.device)
     transform = ResNet18_Weights.IMAGENET1K_V1.transforms()
-    root = Path(ctx.spec["dataset_path"])
-    def image_tensor(index):
-        item = data["entries"][index]
-        content = (root / item["path"]).read_bytes()
-        if hashlib.sha256(content).hexdigest() != item["sha256"]:
-            raise ValueError(f"Image changed during training: {item['path']}")
-        with Image.open(io.BytesIO(content)) as image:
-            return transform(image.convert("RGB"))
+    from .image_pipeline import ImageReader, cached_features
+    mode = ctx.spec.get("image_loader", "sync")
+    if mode == "prefetch" and ctx.spec["batch_size"] * 3 * 224 * 224 * 4 * 2 > 128 * 1024 * 1024:
+        raise ValueError("Image prefetch buffers exceed 128 MiB; use synchronous loading or a smaller batch")
+    reader = ImageReader(ctx.spec["dataset_path"], data["entries"], transform, torch, mode)
     def state():
         opt = optimizer.state_dict()
         opt["state"] = {str(key): {name: value.detach().cpu().tolist() if torch.is_tensor(value) else value
                                   for name, value in values.items()} for key, values in opt["state"].items()}
-        return {"head": {key: value.detach().cpu().tolist() for key, value in model.fc.state_dict().items()},
+        result = {"head": {key: value.detach().cpu().tolist() for key, value in model.fc.state_dict().items()},
                 "optimizer": opt, "rng_state": rng.getstate(), "torch_rng": torch.get_rng_state().tolist(),
                 "cuda_rng": torch.cuda.get_rng_state(device=ctx.device).tolist() if ctx.gpu_index is not None else [],
                 "epoch": epoch, "cursor": cursor, "order": order, "weights_sha256": digest,
                 "weights_asset": "assets/base_weights.pth", "dataset_manifest_sha256": data["content_hash"],
                 "split": {"train_indices": data["train_indices"], "validation_indices": data["validation_indices"]}}
-    ctx._state_factory = state
-    ctx.checkpoint(state())
-    while ctx.step < ctx.spec["steps"] and not ctx.should_stop():
-        if not order or cursor >= len(order):
-            if order:
-                epoch += 1
-            order = list(data["train_indices"])
-            rng.shuffle(order)
-            cursor = 0
-        batch = order[cursor:cursor + ctx.spec["batch_size"]]
-        inputs = torch.stack([image_tensor(index) for index in batch]).to(ctx.device)
-        labels = torch.tensor([data["labels"][index] for index in batch], device=ctx.device)
-        optimizer.zero_grad(set_to_none=True)
-        loss = torch.nn.functional.cross_entropy(model(inputs), labels)
-        loss.backward()
-        optimizer.step()
-        cursor += len(batch)
-        ctx.report(loss.detach().item(), epoch=epoch + 1, epochs=ctx.spec["epochs"])
-        ctx.maybe_checkpoint()
-    ctx.checkpoint(state())
-    if ctx.step == ctx.spec["steps"]:
-        ctx.phase = "evaluating"
-        probabilities, labels = [], []
-        with torch.no_grad():
-            for start in range(0, len(data["validation_indices"]), ctx.spec["batch_size"]):
-                batch = data["validation_indices"][start:start + ctx.spec["batch_size"]]
-                probabilities.extend(torch.softmax(model(torch.stack([image_tensor(index) for index in batch]).to(ctx.device)), 1).cpu().tolist())
-                labels.extend(data["labels"][index] for index in batch)
-        ctx.evaluation = {"split": "validation", **classification_metrics(probabilities, labels, data["metadata"]["classes"])}
-        exported = {"format": "multigpu-image-resnet18-v1", "classes": data["metadata"]["classes"],
-                    "head": state()["head"], "base_weights": "base_weights.pth", "weights_sha256": digest,
-                    "weights_identity": RESNET18_ID}
-        ctx.export({"model.json": canonical_json(exported), "base_weights.pth": asset,
-                    "input_schema.json": canonical_json(data["metadata"]["input_schema"]),
-                    "evaluation.json": canonical_json(ctx.evaluation),
-                    "README.txt": "ResNet18 frozen ImageNet backbone with a trained classification head.\n"
-                                  "Install compatible torch, torchvision and Pillow, then run: python predict.py --image your-image.jpg\n"
-                                  "The verified pretrained base asset is included; inference needs no download.\n", **inference_files()})
+        if ctx.spec.get("image_feature_cache"):
+            result["image_feature_cache"] = True
+        return result
+    try:
+        ctx._state_factory = state
+        ctx.checkpoint(state())
+        features = cached_features(ctx, data, model, reader, digest) if ctx.spec.get("image_feature_cache") else None
+        if ctx.spec.get("image_feature_cache") and features is None:
+            return
+        ctx.phase = "training"
+        pending = None
+        while ctx.step < ctx.spec["steps"] and not ctx.should_stop():
+            if not order or cursor >= len(order):
+                if order:
+                    epoch += 1
+                order = list(data["train_indices"])
+                rng.shuffle(order)
+                cursor = 0
+                pending = None
+            batch = order[cursor:cursor + ctx.spec["batch_size"]]
+            if features is not None:
+                inputs = features[batch].to(ctx.device)
+            else:
+                if pending is None:
+                    pending = iter(reader.batches([order[start:start + ctx.spec["batch_size"]] for start in range(cursor, len(order), ctx.spec["batch_size"])]))
+                _, inputs = next(pending)
+                inputs = inputs.to(ctx.device)
+            labels = torch.tensor([data["labels"][index] for index in batch], device=ctx.device)
+            optimizer.zero_grad(set_to_none=True)
+            loss = torch.nn.functional.cross_entropy(model.fc(inputs) if features is not None else model(inputs), labels)
+            loss.backward()
+            optimizer.step()
+            cursor += len(batch)
+            ctx.report(loss.detach().item(), epoch=epoch + 1, epochs=ctx.spec["epochs"])
+            ctx.performance.samples += len(batch)
+            ctx.maybe_checkpoint()
+        ctx.checkpoint(state())
+        if ctx.step == ctx.spec["steps"]:
+            ctx.phase = "evaluating"
+            probabilities, labels = [], []
+            with torch.no_grad():
+                batches = [data["validation_indices"][start:start + ctx.spec["batch_size"]] for start in range(0, len(data["validation_indices"]), ctx.spec["batch_size"])]
+                inputs_iter = ((batch, features[batch]) for batch in batches) if features is not None else reader.batches(batches)
+                for batch, inputs in inputs_iter:
+                    output = model.fc(inputs.to(ctx.device)) if features is not None else model(inputs.to(ctx.device))
+                    probabilities.extend(torch.softmax(output, 1).cpu().tolist())
+                    labels.extend(data["labels"][index] for index in batch)
+            ctx.evaluation = {"split": "validation", **classification_metrics(probabilities, labels, data["metadata"]["classes"])}
+            exported = {"format": "multigpu-image-resnet18-v1", "classes": data["metadata"]["classes"],
+                        "head": state()["head"], "base_weights": "base_weights.pth", "weights_sha256": digest,
+                        "weights_identity": RESNET18_ID}
+            ctx.export({"model.json": canonical_json(exported), "base_weights.pth": asset,
+                        "input_schema.json": canonical_json(data["metadata"]["input_schema"]),
+                        "evaluation.json": canonical_json(ctx.evaluation),
+                        "README.txt": "ResNet18 frozen ImageNet backbone with a trained classification head.\n"
+                                      "Install compatible torch, torchvision and Pillow, then run: python predict.py --image your-image.jpg\n"
+                                      "The verified pretrained base asset is included; inference needs no download.\n", **inference_files()})
+    finally:
+        reader.close()

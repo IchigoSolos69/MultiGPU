@@ -118,7 +118,7 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(set(archive.namelist()), {"training.ipynb", "README.md"})
             notebook = json.loads(archive.read("training.ipynb"))
         payload = self.embedded_archive(next("".join(cell["source"]) for cell in notebook["cells"] if "base64.b64decode" in "".join(cell["source"])))
-        self.assertEqual(set(payload.namelist()), {"run.py", "spec.json", "multigpu/__init__.py", "multigpu/worker.py", "multigpu/artifacts.py", "multigpu/datasets.py", "multigpu/recipes.py", "multigpu/prediction.py", "multigpu/notebook_runtime.py"})
+        self.assertEqual(set(payload.namelist()), {"run.py", "spec.json", "multigpu/__init__.py", "multigpu/worker.py", "multigpu/artifacts.py", "multigpu/datasets.py", "multigpu/recipes.py", "multigpu/prediction.py", "multigpu/notebook_runtime.py", "multigpu/performance.py", "multigpu/image_pipeline.py", "multigpu/staging.py"})
 
     def test_bundled_worker_error_exits_nonzero(self):
         self.spec.write_text(json.dumps(dict(recipe="starter", steps=-1)), encoding="utf-8")

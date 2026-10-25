@@ -75,6 +75,14 @@ class ResearchDirectoryTests(unittest.TestCase):
 
 
 class ResearchAPITests(unittest.TestCase):
+    def test_runtime_endpoint_has_no_static_research_and_keeps_session_guard(self):
+        with self.get("/api/runtime") as response:
+            data = json.load(response)
+            self.assertTrue(response.headers["X-MultiGPU-Token"])
+            self.assertIn("jobs", data)
+            self.assertNotIn("research_providers", data)
+            self.assertNotIn("providers", data)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=TEMP_ROOT)
         with patch("multigpu.service.hardware_info", return_value={"cuda_available": False, "gpus": [], "torch_available": False}):

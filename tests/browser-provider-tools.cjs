@@ -18,6 +18,7 @@ const path=require('node:path');
   const req=route.request(),url=new URL(req.url()),body=req.method()==='POST'?req.postDataJSON():null;
   const send=value=>route.fulfill({json:value,headers:{'X-MultiGPU-Token':'fixture'}});
   if(url.pathname==='/api/bootstrap')return send({...metadata,jobs:[],environment_tasks:tasks});
+  if(url.pathname==='/api/runtime')return send({jobs:[],environment_tasks:tasks,connections:Object.fromEntries(metadata.providers.map(p=>[p.id,p.connection]))});
   if(url.pathname==='/api/draft')return send({draft:{}});
   if(url.pathname==='/api/environment/tasks')return send({tasks});
   if(url.pathname==='/api/environment/setup'){assert.equal(body.profile,'kaggle');installs++;const task={id:'kaggle-'+installs,profile:'kaggle',status:'running',cancellable:true,logs:['Fixture installation']};tasks=[task,...tasks];return send(task);}

@@ -1,5 +1,11 @@
 # MultiGPU interface
 
+## Version 0.5 performance evidence
+
+Keep the existing Developer Tool / CLI Companion direction, framed sheet, Segoe/Consolas typography, blue action token and neutral ledger surfaces. This is a working training dashboard: the user needs measured costs and a deliberate resource choice, not additional decorative KPI tiles. Performance appears as an expandable ledger in the run timeline; unknown hardware/network observations remain explicit. Preview recommendations sit next to the reviewed plan, name their saved-run evidence, and require acceptance followed by another preview. Image acceleration lives inside advanced training settings, defaults off, and explains checkpoint/numerical implications. Reuse 6px controls, 24px content rhythm, existing focus states and responsive stacking; add no motion or fonts.
+
+Actual Chrome review at 1440px and 390px confirmed the ledger, recommendation controls and image options fit the existing frame without horizontal overflow. Sub-second estimates now retain useful precision; an expanded performance ledger stays open during polling even after focus moves. Matching current selections do not show an unnecessary acceptance action. Browser acceptance verifies that accepting a changed suggestion re-previews without launching training. AI Slop Score 2/10; Distinctiveness 7/10. The performance ledger stays deliberately quiet and evidence-led; no new decorative dashboard language was introduced.
+
 ## Version 0.4.4 provider research
 
 Extend the existing developer-tool workspace with a compact evidence ledger. The provider directory combines integrated resources and researched options, with separate integration and cost labels. Keep training selectors limited to existing integrations. Search, cost/access filters and 25-row pagination make the larger directory usable; do not create a wall of provider cards.

@@ -49,6 +49,15 @@ def validate_spec(raw, default_output):
     if "guided" in raw and not isinstance(raw["guided"], bool):
         raise ValueError("guided must be true or false.")
     spec["free_only"] = raw.get("free_only", True)
+    if type(raw.get("image_feature_cache", False)) is not bool:
+        raise ValueError("image_feature_cache must be true or false")
+    loader = raw.get("image_loader", "sync")
+    if loader not in {"sync", "prefetch"}:
+        raise ValueError("Choose sync or prefetch image loading")
+    if raw.get("image_feature_cache") or loader != "sync":
+        if not image:
+            raise ValueError("Image acceleration options require the image recipe")
+        spec.update(image_feature_cache=raw.get("image_feature_cache", False), image_loader=loader)
     if not spec["free_only"] and spec["paid_cap"] <= 0:
         raise ValueError("Set a positive spending cap before enabling paid compute.")
     spec["runtime_seconds"] = int(spec["runtime_minutes"] * 60)

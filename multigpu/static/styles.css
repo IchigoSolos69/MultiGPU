@@ -727,3 +727,8 @@ input,textarea{caret-color:var(--accent)}
 @media(max-width:540px){.directory-summary .button-row{width:100%;align-items:stretch}.directory-summary .button{flex:1;white-space:normal;font-size:12px;min-height:44px}.directory-filters .filter-tabs{justify-content:flex-start;gap:3px}.directory-filters .filter-tab{padding:7px 9px;min-height:42px}.directory-cost-label select{font-size:16px;min-height:44px;min-width:0;width:65%}.cost-badge{font-size:12px}.research-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 24px)}.research-dialog .dialog-body{padding:18px}.research-dialog .dialog-header>.icon-button{flex-basis:44px;width:44px;height:44px}.research-facts>div{grid-template-columns:1fr;gap:3px}.research-reader-controls select{font-size:16px;min-height:44px}.research-content h2{font-size:21px}.research-report-links .button{min-height:44px}.research-link{min-height:32px}.directory-pagination{justify-content:space-between;gap:8px}}
 
 .skip-link:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap;padding:0}
+/* Performance evidence follows the existing compact ledger. */
+.performance-evidence { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line, #e5e8ed); }
+.performance-evidence .value-pair { gap: 12px; }
+.performance-evidence .value-pair strong { text-align: right; }
+.performance-evidence summary { cursor: pointer; font-weight: 600; }

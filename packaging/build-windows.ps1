@@ -1,4 +1,4 @@
-param([string]$Version = '0.4.4', [string]$Compiler, [switch]$PrepareOnly)
+param([string]$Version = '0.5.0', [string]$Compiler, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $buildRoot = Join-Path $repository 'build'
@@ -33,7 +33,7 @@ $actualVersion = (& $python.FullName -c 'import platform; print(platform.python_
 if ($actualVersion -ne $pythonVersion) { throw "Expected Python $pythonVersion; found $actualVersion." }
 
 # An explicit allowlist prevents credentials, exports, .env, tests and local state from entering the installer.
-$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','notebook_runtime.py','planner.py','prediction.py','process_control.py','recipes.py','research.py','server.py','service.py','store.py','worker.py')
+$appFiles = @('__init__.py','__main__.py','artifacts.py','benchmark.py','performance.py','performance_benchmark.py','image_pipeline.py','staging.py','catalog.py','connectors.py','datasets.py','desktop.py','environment.py','imports.py','onboarding.py','notebook_runtime.py','planner.py','prediction.py','process_control.py','recipes.py','research.py','server.py','service.py','store.py','worker.py')
 $appRoot = Join-Path $payload 'multigpu'
 New-Item -ItemType Directory -Path (Join-Path $appRoot 'static') -Force | Out-Null
 foreach ($name in $appFiles) { Copy-Item -LiteralPath (Join-Path $repository "multigpu/$name") -Destination $appRoot }
@@ -42,6 +42,7 @@ New-Item -ItemType Directory -Path (Join-Path $appRoot 'data') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $repository 'multigpu/data/provider-research.json') -Destination (Join-Path $appRoot 'data')
 # Public research is bundled for in-app reading without a network connection.
 $researchFiles = @(
+    'docs/PERFORMANCE.md',
     'docs/PROVIDER_RESEARCH.md', 'docs/ADDITIONAL_PROVIDERS.md',
     'docs/research/providers-gpu-2026-10-24.md',
     'docs/research/providers-credits-2026-10-24.md',

@@ -285,6 +285,8 @@ class ExecutionSafetyTests(unittest.TestCase):
 
     def test_mlp_allocation_and_checkpoint_rng_use_selected_gpu(self):
         torch = self.fake_torch()
+        from unittest.mock import MagicMock
+        torch.tensor.return_value = MagicMock()
         model = torch.nn.Sequential.return_value
         model.to.return_value = model
         model.state_dict.return_value = {}
@@ -292,14 +294,15 @@ class ExecutionSafetyTests(unittest.TestCase):
         optimizer.state_dict.return_value = {"state": {}, "param_groups": []}
         torch.nn.functional.binary_cross_entropy_with_logits.return_value.detach.return_value.item.return_value = .25
         ctx = SimpleNamespace(spec={"recipe_version": 1, "device": "cuda", "gpu_index": 1, "seed": 42, "steps": 2, "batch_size": 1, "learning_rate": .05}, step=1,
-                              resume_state={"model": {}, "optimizer": {"state": {}, "param_groups": []}, "rng_state": random.Random(42).getstate(), "torch_rng": [3, 4], "cuda_rng": [1, 2]}, checkpoint=Mock(), should_stop=lambda: False, maybe_checkpoint=Mock())
+                              resume_state={"model": {}, "optimizer": {"state": {}, "param_groups": []}, "rng_state": random.Random(42).getstate(), "torch_rng": [3, 4], "cuda_rng": [1, 2]}, checkpoint=Mock(), should_stop=lambda: False, maybe_checkpoint=Mock(), performance=SimpleNamespace(samples=0))
         def report(loss):
             ctx.step += 1
         ctx.report = report
         with patch.dict(sys.modules, {"torch": torch}), patch.object(recipes, "_finish_tabular"):
             recipes.train_pytorch(ctx, {"features": [[1.]], "labels": [1.], "train_indices": [0]})
         model.to.assert_called_once_with("cuda:1")
-        self.assertEqual([call.kwargs["device"] for call in torch.tensor.call_args_list if "device" in call.kwargs], ["cuda:1", "cuda:1"])
+        self.assertFalse(any("device" in call.kwargs for call in torch.tensor.call_args_list))
+        self.assertEqual([call.args[0] for call in torch.tensor.return_value.__getitem__.return_value.to.call_args_list], ["cuda:1", "cuda:1"])
         self.assertEqual(torch.cuda.set_rng_state.call_args.kwargs["device"], "cuda:1")
         self.assertTrue(all(call.kwargs["device"] == "cuda:1" for call in torch.cuda.get_rng_state.call_args_list))
 
